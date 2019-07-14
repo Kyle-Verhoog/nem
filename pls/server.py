@@ -16,34 +16,12 @@ import zmq
 from pls.share import CODE, SOCK
 
 
-DATABASE = 'db'
-
 """
 COMMAND CODE
 
 COMMAND PWD TIMESTAMP
 """
-
-# TEMP
-db = {
-    'recent': [
-        'git status',
-        'git diff',
-        'git diff --staged',
-        'git add -u',
-        # 'git commit -m "{}"',
-    ],
-    'pwd': [
-        'docker-compose -f logs celery',
-        'docker-compose up -d',
-        './manage.py migrate',
-        './manage.py graphql_schema',
-        './manage.py makemigrations billing',
-    ],
-    'custom': [
-        'docker-compose -f logs celery'
-    ]
-}
+DATABASE = 'db'
 
 
 log = logging.getLogger(__name__)
@@ -98,9 +76,6 @@ class Command:
 
 
 class CmdTable:
-    def __init__(self, db):
-        self.db = db
-
     def lookup(self, code):
         pass
 
@@ -122,44 +97,27 @@ class CmdTable:
             code += 'f'
         return code
 
-    def _cmdtable_w_codes(self, cmdtable):
-        tablewcodes = []
-        codes = set()
-
-        for col in cmdtable:
-            newcol = []
-            for cmd in col:
-                code = self._code(cmd, codes)
-                codes.add(code)
-                if code:
-                    newcol.append(f'{cmd} [{code}]')
-                else:
-                    newcol.append(f'{cmd}')
-            tablewcodes.append(newcol)
-
-        return tablewcodes
+    def _format(self, rows):
+        return [[f'{cmd} [{code}]'] for (cmd, code) in rows]
 
     def list(self):
-        headers = ['most used', 'pwd (stored)']
-        db_data = [db['recent'], db['pwd'], ]
-        db_data = list(map(list, zip_longest(*db_data, fillvalue='')))
-        data = self._cmdtable_w_codes(db_data)
+        cursor.execute('select * from cmds')
+        rows = cursor.fetchall()
+        headers = ['commands']
+        data = self._format(rows)
         table = tabulate.tabulate(
             data,
             headers=headers,
             tablefmt='fancy_grid',
         )
-        table = table.replace('[', '(<ansiblue>')
-        table = table.replace(']', '</ansiblue>)')
+        table = table.replace('[', '[<ansiblue>')
+        table = table.replace(']', '</ansiblue>]')
         return resp(out=table)
 
 
 class Resources:
     alias = Alias()
-    table = CmdTable(db)
-
-
-HELP = """<ansiyellow>pls: enter a command</ansiyellow>"""
+    table = CmdTable()
 
 
 def handle_req(req):
@@ -219,13 +177,18 @@ def handle_req(req):
             return err(out=f'<ansired>alias or command</ansired> {q} <ansired>not found</ansired>')
         cmd = db[q]
         return resp(out=f'<ansigreen>exec:</ansigreen> {cmd}', code=CODE.EXEC, ctx={'cmd': cmd})
-
-    if cmd in ['--add', '-a', 'a']:
+    elif cmd in ['--add', '-a', 'a']:
         pass
     elif cmd == '--stop':
         raise ExitInterrupt()
     elif cmd in ['--restart']:
         raise RestartInterrupt()
+
+    cursor.execute('select * from cmds where code=?', (cmd, ))
+    rows = cursor.fetchall()
+    if rows:
+        cmd, code = rows[0]
+        return resp(out=f'<ansigreen>exec:</ansigreen> {cmd}', code=CODE.EXEC, ctx={'cmd': cmd})
     else:
         log.info(f'unknown command {cmd}')
         return err(out=f'<ansired>unknown command:</ansired> {cmd}')

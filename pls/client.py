@@ -26,7 +26,8 @@ def client():
         reply = msgpack.unpackb(sock.recv(), raw=False)
         stdout, code, ctx = reply
         if code == CODE.EXEC:
-            prompt(HTML(stdout))
+            # prompt(HTML(stdout), vi_mode=True)
+            print(HTML(stdout))
             system(ctx['cmd'])
         else:
             print(HTML(stdout))
