@@ -1,13 +1,10 @@
-import argparse
-import os
-from os import environ as env
 import sys
-
+from os import environ as env, execl, system
 import msgpack
 from prompt_toolkit import HTML, prompt, print_formatted_text as print
 import zmq
 
-from pls.share import SOCK
+from pls.share import CODE, SOCK
 
 
 def get_context():
@@ -27,8 +24,12 @@ def client():
             **ctx,
         }))
         reply = msgpack.unpackb(sock.recv(), raw=False)
-        stdout, err, ctx = reply
-        print(HTML(stdout))
+        stdout, code, ctx = reply
+        if code == CODE.EXEC:
+            prompt(HTML(stdout))
+            system(ctx['cmd'])
+        else:
+            print(HTML(stdout))
     except Exception as e:
         raise e
     finally:
