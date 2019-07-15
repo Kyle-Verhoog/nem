@@ -50,7 +50,7 @@ class RestartInterrupt(PlsException):
     pass
 
 
-def resp(out='', code=0, ctx=None):
+def mkresp(out='', code=0, ctx=None):
     log.info(f'creating response "{out}" {code} {ctx}')
     ctx = ctx or {}
     return msgpack.packb((out, code, ctx))
@@ -58,50 +58,55 @@ def resp(out='', code=0, ctx=None):
 
 def err(**kwargs):
     kwargs.update(code=-1)
-    return resp(**kwargs)
+    return mkresp(**kwargs)
+
+def mkcode(cmd, codes):
+    if not cmd:
+        return ''
+
+    def _pick_letter(word):
+        l = list(word)
+        while l:
+            if l[0].isalpha():
+                return l[0]
+            else:
+                l = l[1:]
+        return ''
+
+    code = ''.join([_pick_letter(s) for s in str(cmd).split(' ')])
+    while code in codes:
+        code += 'f'
+    return code
 
 
-class Alias:
-    prefix = 'a'
-
-    def create(self, args):
-        pass
-
-
-class Command:
-    prefix = 'c'
-
-    def create(self, args):
-        pass
+class Resource:
+    def handle(self, cmd, args):
+        try:
+            attr = [attr for attr in dir(self) if not attr.startswith('__') and attr.startswith(cmd[0])]
+            handler = getattr(self, attr[0])
+            return handler(cmd[1:], args)
+        except Exception:
+            log.error(f'failed on command {cmd}', exc_info=True)
+            return err(out=f'command {cmd} does not exist on resource {self.__class__.__name__}')
 
 
-class CmdTable:
-    def lookup(self, code):
-        pass
+class CmdManager(Resource):
+    def create(self, opts, args):
+        pwd = os.environ.get('PWD')
+        cursor.execute('select cmd, code from cmds')
+        codes_cmds = { code: cmd for cmd, code in cursor.fetchall() }
+        cmd = ' '.join(args)
+        code = mkcode(cmd, codes_cmds)
+        cursor.execute('insert into cmds(cmd, code, desc, freq) values (?, ?, ?, ?);', (cmd, code, '', 0))
+        return mkresp(out=f'<ansigreen>added command:</ansigreen> <ansiblue>{code}</ansiblue> = {cmd}')
 
-    def _code(self, cmd, sofar):
-        if not cmd:
-            return ''
 
-        def _pick_letter(word):
-            l = list(word)
-            while l:
-                if l[0].isalpha():
-                    return l[0]
-                else:
-                    l = l[1:]
-            return ''
-
-        code = ''.join([_pick_letter(s) for s in str(cmd).split(' ')])
-        while code in sofar:
-            code += 'f'
-        return code
-
+class CmdTable(Resource):
     def _format(self, rows):
         return [[f'{cmd} [{code}]'] for (cmd, code) in rows]
 
-    def list(self):
-        cursor.execute('select * from cmds')
+    def list(self, opts, args):
+        cursor.execute('select cmd, code from cmds')
         rows = cursor.fetchall()
         headers = ['commands']
         data = self._format(rows)
@@ -112,12 +117,66 @@ class CmdTable:
         )
         table = table.replace('[', '[<ansiblue>')
         table = table.replace(']', '</ansiblue>]')
-        return resp(out=table)
+        return mkresp(out=table)
+
+
+class ServerControl():
+    def restart(self):
+        raise RestartInterrupt()
+
+    def dbinit(self):
+        cursor.execute("""
+        create table if not exists cmds(
+            cmd text,
+            code text primary key,
+            desc text,
+            freq integer
+        )""") # description
+        # cursor.execute("""
+        # create table if not exists usages(
+        #     code text primary key,
+        #     pwd text,
+        #     timestamp text
+        # )""")
+        cursor.execute('insert into cmds(cmd, code, desc, freq) values ("git status", "gs", "", 0);')
+        cursor.execute('insert into cmds(cmd, code, desc, freq) values ("git add -u", "gau", "", 0);')
+        cursor.execute('insert into cmds(cmd, code, desc, freq) values ("git diff --staged", "gds", "", 0);')
+        cursor.execute('insert into cmds(cmd, code, desc, freq) values ("git diff", "gd", "", 0);')
+        connection.commit()
+        return mkresp(out=f'<ansigreen>db seeded</ansigreen>')
+
+    def dbrm(self):
+        cursor.execute("""drop table cmds""")
+        # cursor.execute("""drop table usages""")
+        connection.commit()
+        return mkresp(out=f'<ansigreen>db cleared</ansigreen>')
+
+    def stop(self):
+        raise ExitInterrupt()
+
+    def handle(self, cmd, args):
+        if cmd.startswith('r'):
+            return self.restart()
+        if cmd.startswith('s'):
+            return self.stop()
+        if cmd.startswith('+'):
+            return self.dbinit()
+        if cmd.startswith('-'):
+            return self.dbrm()
 
 
 class Resources:
-    alias = Alias()
+    commands = CmdManager()
     table = CmdTable()
+    server = ServerControl()
+
+    @classmethod
+    def interpret(cls, cmd, args):
+        resource = [r for r in dir(cls) if not r.startswith('__') and r.startswith(cmd[0])]
+        if not resource or not hasattr(cls, resource[0]):
+            return None
+        resource = getattr(cls, resource[0])
+        return resource.handle(cmd[1:], args)
 
 
 def handle_req(req):
@@ -125,70 +184,40 @@ def handle_req(req):
     args = req['args']
 
     if len(args) < 2:
-        return Resources.table.list()
+        args.append('.tl')
 
     cmd = args[1]
 
+    if cmd.startswith('.'):
+        resp = Resources.interpret(cmd[1:], args[2:])
+        if resp:
+            return resp
+
     ctx = {}
-    # create commands
-    if cmd.startswith('c'):
-        action = cmd[1]
-        if action in ['a']:
-            if 'h' in cmd:
-                ctx['pwd'] = os.environ.get('PWD')
-            else:
-                ctx['pwd'] = '/home'
-            alias, cmd = args[2], ' '.join(args[3:])
-            db[alias] = cmd
-            return resp(out=f'<ansigreen>added command:</ansigreen> [{ctx["pwd"]}] <ansiblue>{alias}</ansiblue> = {cmd}')
-    elif cmd.startswith('l'):
+    if cmd.startswith('l'):
         action = cmd[1]
         if action in ['a']:
             aliases = '\n'.join([f'<ansiblue>{key}</ansiblue> = {value}' for key, value in db.items()])
-            return resp(out=f'<ansigreen>aliases:</ansigreen>\n{aliases}')
-    elif cmd.startswith('r'):
-        raise RestartInterrupt()
-    elif cmd.startswith('+'):
-        cursor.execute("""
-        create table if not exists cmds(
-            cmd text,
-            code text primary key
-        )""")
-        # cursor.execute("""
-        # create table if not exists usages(
-        #     code text primary key,
-        #     pwd text,
-        #     timestamp text
-        # )""")
-        cursor.execute("""insert into cmds(cmd, code) values ("git status", "gs");""")
-        cursor.execute("""insert into cmds(cmd, code) values ("git add -u", "gau");""")
-        cursor.execute("""insert into cmds(cmd, code) values ("git diff --staged", "gds");""")
-        cursor.execute("""insert into cmds(cmd, code) values ("git diff", "gd");""")
-        connection.commit()
-        return resp(out=f'<ansigreen>db seeded</ansigreen>')
-    elif cmd.startswith('-'):
-        cursor.execute("""drop table cmds""")
-        # cursor.execute("""drop table usages""")
-        connection.commit()
-        return resp(out=f'<ansigreen>db cleared</ansigreen>')
+            return mkresp(out=f'<ansigreen>aliases:</ansigreen>\n{aliases}')
     elif cmd.startswith('e'):
         q = args[2]
         if q not in db:
             return err(out=f'<ansired>alias or command</ansired> {q} <ansired>not found</ansired>')
         cmd = db[q]
-        return resp(out=f'<ansigreen>exec:</ansigreen> {cmd}', code=CODE.EXEC, ctx={'cmd': cmd})
+        return mkresp(out=f'<ansigreen>exec:</ansigreen> {cmd}', code=CODE.EXEC, ctx={'cmd': cmd})
     elif cmd in ['--add', '-a', 'a']:
         pass
-    elif cmd == '--stop':
-        raise ExitInterrupt()
     elif cmd in ['--restart']:
         raise RestartInterrupt()
 
-    cursor.execute('select * from cmds where code=?', (cmd, ))
+    cursor.execute('select cmd, code, freq from cmds where code=?', (cmd, ))
     rows = cursor.fetchall()
     if rows:
-        cmd, code = rows[0]
-        return resp(out=f'<ansigreen>exec:</ansigreen> {cmd}', code=CODE.EXEC, ctx={'cmd': cmd})
+        cmd, code, freq = rows[0]
+        cursor.execute('update cmds set freq=? where code=?', (freq+1, code))
+        # cursor.execute('insert into usages(cmd, code, desc, freq) values ("git status", "gs", "", 0)')
+        connection.commit()
+        return mkresp(out=f'<ansigreen>exec:</ansigreen> {cmd} [{freq}]', code=CODE.EXEC, ctx={'cmd': cmd})
     else:
         log.info(f'unknown command {cmd}')
         return err(out=f'<ansired>unknown command:</ansired> {cmd}')
@@ -222,7 +251,7 @@ def server():
     except RestartInterrupt:
         log.warn(f'user-induced restart')
         log.info(f'restarting...')
-        sock.send(resp('<ansigreen>server restarted</ansigreen>'))
+        sock.send(mkresp('<ansigreen>server restarted</ansigreen>'))
         shutdown()
         ex = sys.executable
         os.execl(ex, ex, *sys.argv)
