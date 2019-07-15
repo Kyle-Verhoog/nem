@@ -13,7 +13,7 @@ import sqlite3
 import tabulate
 import zmq
 
-from pls.share import CODE, SOCK
+from nem.share import CODE, SOCK
 
 
 """
@@ -69,6 +69,8 @@ def mkcode(cmd, codes):
         while l:
             if l[0].isalpha():
                 return l[0]
+            elif l[0] in ['{']:
+                return ''
             else:
                 l = l[1:]
         return ''
@@ -112,7 +114,7 @@ class CmdManager(Resource):
         cmd, code = r[0]
         cursor.execute('delete from cmds where code=?', (code, ))
         connection.commit()
-        return mkresp(out=f'<ansigreen>removed command {cmd} for code</ansigreen> <ansiblue>{code}</ansiblue>')
+        return mkresp(out=f'<ansigreen>removed command "{cmd}" with code</ansigreen> <ansiblue>{code}</ansiblue>')
 
 
 class CmdTable(Resource):
@@ -120,11 +122,11 @@ class CmdTable(Resource):
     def list(self, opts, args, ctx):
         cursor.execute('select cmd, code, freq from cmds')
         rows = cursor.fetchall()
-        headers = ['command', 'code']
+        headers = ['command', 'code', 'usages']
 
         def _format(rows):
             if 'v' in opts:
-                return [[f'{cmd} [{code}] ({freq} usages)'] for (cmd, code, freq) in rows]
+                return [[f'{cmd}', f'[{code}]', f'{freq}'] for (cmd, code, freq) in rows]
             else:
                 return [[f'{cmd}', f'[{code}]'] for (cmd, code, _) in rows]
 

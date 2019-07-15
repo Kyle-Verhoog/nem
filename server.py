@@ -1,4 +1,4 @@
-from pls.server import server
+from nem.server import server
 
 
 if __name__ == '__main__':

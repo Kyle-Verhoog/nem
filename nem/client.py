@@ -4,7 +4,7 @@ import msgpack
 from prompt_toolkit import HTML, prompt, print_formatted_text as print
 import zmq
 
-from pls.share import CODE, SOCK
+from nem.share import CODE, SOCK
 
 
 def get_context():
