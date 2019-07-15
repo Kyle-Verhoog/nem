@@ -1,5 +1,5 @@
 import sys
-from os import environ as env, execl, system
+from os import environ as env, system
 import msgpack
 from prompt_toolkit import HTML, prompt, print_formatted_text as print
 import zmq
