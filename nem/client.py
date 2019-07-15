@@ -1,7 +1,7 @@
-import sys
-from os import environ as env, system
 import msgpack
+from os import environ as env, system
 from prompt_toolkit import HTML, prompt, print_formatted_text as print
+import sys
 import zmq
 
 from nem.share import CODE, SOCK

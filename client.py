@@ -1,5 +1,4 @@
-from nem.client import client
-
+from nem import nem
 
 if __name__ == '__main__':
-    client()
+    nem.nem()
