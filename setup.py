@@ -1,3 +1,5 @@
+import os
+import re
 from setuptools import find_packages, setup
 
 
@@ -9,7 +11,9 @@ def get_version(package):
     init_py = open(os.path.join(package, '__init__.py')).read()
     return re.search("__version__ = ['\"]([^'\"]+)['\"]", init_py).group(1)
 
+
 version = get_version('nem')
+
 
 setup(
     entry_points={
