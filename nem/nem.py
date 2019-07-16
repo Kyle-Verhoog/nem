@@ -1,16 +1,19 @@
 import logging
 import os
+from os.path import expanduser
+from pathlib import Path
 import sys
 
 import colouredlogs
 from prompt_toolkit import HTML, print_formatted_text as print
-import sqlalchemy
-from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.orm.exc import NoResultFound
 import tabulate
 import toml
+
+from .ptdb import Column, Db, DbError, NoResultFound, Model, Schema
+
+
+DB_FILE = os.environ.get('NEM_DB', str(Path.home().absolute() / '.config' / '.nem.toml'))
+DB_FILE = str(Path(DB_FILE).absolute())
 
 
 log = logging.getLogger(__name__)
@@ -21,25 +24,26 @@ colouredlogs.install(
     format='%(asctime)s.%(msecs)03d %(levelname)s %(module)s - %(funcName)s: %(message)s',
     datefmt='%H:%M:%S',
 )
-engine = create_engine('sqlite:///db')
-Session = sessionmaker(bind=engine)
-Base = declarative_base()
 
 
 class CODE:
     EXEC = 1
 
 
-class Command(Base):
-    __tablename__ = 'cmds'
+class Command(Model):
+    __table__ = 'cmds'
 
-    cmd = Column(String)
-    code = Column(String, primary_key=True)
-    desc = Column(String)
-    freq = Column(Integer)
+    cmd = Column()
+    code = Column()
+    freq = Column()
+    desc = Column()
 
     def __repr__(self):
         return f'<Command(cmd={self.cmd} code={self.code})>'
+
+class NemSchema(Schema):
+    version = '0.0.1'
+    cmds = Command
 
 
 def mkresp(out='', code=0, ctx=None):
@@ -113,7 +117,7 @@ class CmdManager(Resource):
         try:
             cmd = s.query(Command).filter_by(code=code).one()
             s.delete(cmd)
-            return mkresp(out=f'<ansigreen>removed cmd <ansired>{cmd.cmd}</ansired> with code</ansigreen> <ansiblue>{cmd.code}</ansiblue>')
+            return mkresp(out=f'<ansigreen>removed command <ansired>{cmd.cmd}</ansired> with code</ansigreen> <ansiblue>{cmd.code}</ansiblue>')
         except NoResultFound:
             return err(out=f'<ansired>command for code <ansiblue>{code}</ansiblue> not found</ansired>')
 
@@ -188,7 +192,9 @@ def handle_req(args, ctx):
 
 
 def nem():
-    session = Session()
+    db = Db(toml, NemSchema, dbfiles=[DB_FILE])
+    db.load()
+    session = db
     ctx = {
         'pwd': os.environ.get('PWD'),
         'sess': session
@@ -196,6 +202,7 @@ def nem():
     args = sys.argv[1:]
 
     (out, code, ctx) = handle_req(args, ctx)
+
     if code == CODE.EXEC:
         print(HTML(out))
         os.system(ctx['cmd'])
