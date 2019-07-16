@@ -8,6 +8,7 @@ import sqlalchemy
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm.exc import NoResultFound
 import tabulate
 import toml
 
@@ -95,14 +96,26 @@ class CmdManager(Resource):
         s.add(Command(cmd=cmd, code=code, desc='', freq=0))
         return mkresp(out=f'<ansigreen>added command:</ansigreen> <ansiblue>{code}</ansiblue> = {cmd}')
 
+    def edit(self, opts, args, ctx):
+        s = ctx.get('sess')
+        code = args[0]
+        new_code = args[1]
+        try:
+            cmd = s.query(Command).filter_by(code=code).one()
+            cmd.code = new_code
+            return mkresp(out=f'<ansigreen>command <ansiyellow>{cmd.cmd}</ansiyellow> code updated <ansired>{code}</ansired> -> <ansiblue>{new_code}</ansiblue></ansigreen>')
+        except NoResultFound:
+            return err(out=f'<ansired>code <ansiblue>{code}</ansiblue> not found</ansired>')
+
     def remove(self, opts, args, ctx):
         s = ctx.get('sess')
         code = args[0]
-        cmd = s.query(Command).filter_by(code=code).one()
-        #if len(r) < 1:
-        #    return err(out=f'<ansired>command for code {code} not found</ansired>')
-        s.delete(cmd)
-        return mkresp(out=f'<ansigreen>removed command "{cmd.cmd}" with code</ansigreen> <ansiblue>{cmd.code}</ansiblue>')
+        try:
+            cmd = s.query(Command).filter_by(code=code).one()
+            s.delete(cmd)
+            return mkresp(out=f'<ansigreen>removed cmd <ansired>{cmd.cmd}</ansired> with code</ansigreen> <ansiblue>{cmd.code}</ansiblue>')
+        except NoResultFound:
+            return err(out=f'<ansired>command for code <ansiblue>{code}</ansiblue> not found</ansired>')
 
 
 class CmdTable(Resource):
@@ -161,15 +174,17 @@ def handle_req(args, ctx):
         if resp:
             return resp
 
-    cmd = s.query(Command).filter_by(code=cmd).one()
+    try:
+        cmd = s.query(Command).filter_by(code=cmd).one()
+    except NoResultFound:
+        return err(out=f'<ansired>unknown command:</ansired> {cmd}')
+
     ex_cmd = cmd.cmd
     # if there are args, fill them in
     if len(args) > 1:
         ex_cmd = cmd_w_args(ex_cmd, args[1:])
     cmd.freq += 1
     return mkresp(out=f'<ansigreen>exec:</ansigreen> {ex_cmd}', code=CODE.EXEC, ctx={'cmd': ex_cmd})
-    # log.info(f'unknown command {cmd}')
-    # return err(out=f'<ansired>unknown command:</ansired> {cmd}')
 
 
 def nem():
