@@ -7,6 +7,7 @@ TODO
 - basic caching
 - async commits
 - tests lol
+- unique constraints
 """
 import logging
 import os
@@ -51,9 +52,39 @@ class Schema:
 class Model:
     __table__ = ''
 
-    def __init__(self, *args, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
+    def __init__(self, *args, _db=None, _id=None, **kwargs):
+        self._db = _db
+        self._id = _id
+        self._fields = {}
+        self._fields.update(kwargs)
+
+    def __getattr__(self, name):
+        return self._attrs[name]
+
+    def _set_field(self, field, value):
+        self._db._add_mutation(self._id, field, value)
+        self._fields[field] = value
+        return value
+
+    def __setattr__(self, name, value):
+        if name in {'_db', '_id', '_fields'}:
+            return object.__setattr__(self, name, value)
+
+        attrs = object.__getattribute__(self, '_fields')
+        if attrs and name in attrs:
+            return self._set_field(name, value)
+        else:
+            return object.__setattribute__(self, name, value)
+
+    def _field_access(self, name):
+        return self._fields[name]
+
+    def __getattribute__(self, name):
+        attrs = object.__getattribute__(self, '_fields')
+        if attrs and name in attrs:
+            return self._field_access(name)
+        else:
+            return object.__getattribute__(self, name)
 
     @classmethod
     def ismodel(cls, c):
@@ -87,7 +118,8 @@ class Column:
 
 
 class QuerySet(list):
-    def __init__(self, model, rows):
+    def __init__(self, db, model, rows):
+        self._db = db
         self._rows = rows
         self._model = model
         super().__init__(rows)
@@ -95,13 +127,15 @@ class QuerySet(list):
     def one(self):
         # TODO: should raise if > 1 row
         try:
-            return self._model(**self._rows[0])
+            row = self._rows[0]
+            return self._model(_db=self._db, _id=id(row), **row)
         except IndexError:
             raise NoResultFound
 
 
 class Cursor:
-    def __init__(self, model, dbtables):
+    def __init__(self, db, model, dbtables):
+        self._db = db
         self._model = model
         self._dbtables = dbtables
 
@@ -115,7 +149,7 @@ class Cursor:
                 yield row
 
     def all(self):
-        return [self._model(**row) for row in self._rows()]
+        return [self._model(_db=self._db, _id=id(row), **row) for row in self._rows()]
 
     def filter_by(self, **kwargs):
         in_dbs = kwargs.pop('_in_dbs', None)
@@ -125,7 +159,7 @@ class Cursor:
                 if row[k] != v:
                     return False
             return matches
-        return QuerySet(self._model, [row for row in self._rows(in_dbs) if _row_matches(row)])
+        return QuerySet(self._db, self._model, [row for row in self._rows(in_dbs) if _row_matches(row)])
 
 
 class Db:
@@ -134,10 +168,20 @@ class Db:
         self.lib = lib
         self.schema = schema
         self._dbs = {}
+        self._mutations = {}
 
     @property
     def dbnames(self):
         return self._dbfiles
+
+    @property
+    def rows(self):
+        # generator for all rows in all database.. yikes
+        for dbfile, db in self._dbs.items():
+            for tablename, table in db['__table__'].items():
+                for row in table:
+                    yield row
+
 
     def empty_db(self):
         return {
@@ -175,14 +219,29 @@ class Db:
             # self._dbs[db] = self.schema.from_data(raw_db)
             self._dbs[db] = raw_db
 
+    def _add_mutation(self, _id, field, value):
+        if _id not in self._mutations:
+            self._mutations[_id] = []
+        # TODO: can probably just use a dict for representing
+        # all the mutations and then just update relevant fields
+        self._mutations[_id].append((field, value))
+
     def query(self, model, dbopts=None):
         tables = {
             dbname: db['__table__'][model.__table__]
             for dbname, db in self._dbs.items()
         }
-        return Cursor(model, tables)
+        return Cursor(self, model, tables)
 
     def commit(self):
+        # apply mutations
+        for row in self.rows:
+            row_id = id(row)
+            if row_id in self._mutations:
+                for field, value in self._mutations[row_id]:
+                    row[field] = value
+
+        # persist to file
         for dbname, db in self._dbs.items():
             out = self.lib.dumps(db)
             with open(dbname, 'w') as f:
@@ -192,8 +251,15 @@ class Db:
         cls = inst.__class__
         tablename = cls.__table__
 
+        raw_row = inst.to_raw_row()
+
+        # Since the instance was (most-likely) created outside of our control
+        # it won't have these fields which are required to trigger mutations
+        # on setattr.
+        inst._db = self
+        inst._id = id(raw_row)
         for dbname, db in self._dbs.items():
-            db['__table__'][tablename].append(inst.to_raw_row())
+            db['__table__'][tablename].append(raw_row)
 
     def delete(self, inst, dbopts=None):
         cls = inst.__class__

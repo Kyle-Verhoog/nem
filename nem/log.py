@@ -8,7 +8,7 @@ def get_logger(name):
     logger = logging.getLogger(name)
     colouredlogs.install(
         logger=logger,
-        level=logging.ERROR,
+        level=logging.WARN,
         stream=sys.stdout,
         datefmt='%H:%M:%S',
     )

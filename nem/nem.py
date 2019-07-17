@@ -5,7 +5,6 @@ from pathlib import Path
 import sys
 import traceback
 
-import colouredlogs
 from prompt_toolkit import HTML, print_formatted_text as print, prompt
 import toml
 
@@ -118,7 +117,6 @@ class CmdManager(Resource):
 
 
 class CmdTable(Resource):
-
     def _list_db(self, opts, args, ctx):
         db = ctx.get('db')
 
@@ -128,7 +126,6 @@ class CmdTable(Resource):
             data.append([dbname, len(rows), ])
         table = mktable(data, headers=['dbfile', '# entries'])
         return mkresp(out=f'{table}')
-
 
     def list(self, opts, args, ctx):
         if opts == 'db':
@@ -195,7 +192,7 @@ def handle_req(args, ctx):
     return mkresp(out=f'<ansigreen>exec:</ansigreen> {ex_cmd}', code=CODE.EXEC, ctx={'cmd': ex_cmd})
 
 
-def gather_dbs():
+def gather_dbfiles():
     dbs = []
     if not os.path.exists(DB_FILE):
         print(HTML(f'<ansired>db file <ansiblue>{DB_FILE}</ansiblue> does not exist</ansired>'))
@@ -216,7 +213,7 @@ def gather_dbs():
 
 def nem():
     try:
-        dbs = gather_dbs()
+        dbs = gather_dbfiles()
 
         if not dbs:
             print(HTML('<ansired>could not find a db file to use!</ansired>'))
