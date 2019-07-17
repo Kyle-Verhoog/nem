@@ -13,7 +13,8 @@ from .ptdb import Column, Db, DbError, NoResultFound, Model, Schema
 from .table import mktable
 
 
-DB_FILE = os.environ.get('NEM_DB', str(Path.home().absolute() / '.config' / '.nem.toml'))
+# Note the 'root' is not actually at the root directory and is a special case
+DB_FILE = os.environ.get('NEM_ROOT_DB', str(Path.home().absolute() / '.config' / '.nem.toml'))
 DB_FILE = str(Path(DB_FILE).absolute())
 
 
@@ -91,8 +92,8 @@ class CmdManager(Resource):
         codes_cmds = { cmd.code: cmd.cmd for cmd in cmds }
         cmd = ' '.join(args)
         code = mkcode(cmd, codes_cmds)
-        db.add(Command(cmd=cmd, code=code, desc='', freq=0))
-        return mkresp(out=f'<ansigreen>added command:</ansigreen> <ansiblue>{code}</ansiblue> = {cmd}')
+        db.add(Command(cmd=cmd, code=code, desc='', freq=0), in_dbs=['closest'])
+        return mkresp(out=f'<ansigreen>added command:</ansigreen> <ansiblue>{code}</ansiblue> = <ansiyellow>{cmd}</ansiyellow><ansigreen> to {db.closest}</ansigreen>')
 
     def edit(self, opts, args, ctx):
         db = ctx.get('db')
@@ -133,6 +134,7 @@ class CmdTable(Resource):
 
         db = ctx.get('db')
         rows = db.query(Command).all()
+        rows.reverse()
 
         def _format(rows):
             if 'v' in opts:
@@ -194,19 +196,18 @@ def handle_req(args, ctx):
 
 def gather_dbfiles():
     dbs = []
-    if not os.path.exists(DB_FILE):
-        print(HTML(f'<ansired>db file <ansiblue>{DB_FILE}</ansiblue> does not exist</ansired>'))
-        if prompt('create it [y/n]? ') == 'y':
-            dbs.append(DB_FILE)
-
     d = Path(os.environ.get('PWD'))
-
     while str(d) != '/':
         log.debug(f'searching for config directory {d}')
         db_file = d / '.nem.toml'
         if os.path.exists(db_file) and os.path.isfile(db_file): # and not in block list
             dbs.append(str(db_file))
         d = d.parent
+
+    if not os.path.exists(DB_FILE):
+        print(HTML(f'<ansired>db file <ansiblue>{DB_FILE}</ansiblue> does not exist</ansired>'))
+        if prompt('create it [y/n]? ') == 'y':
+            dbs.append(DB_FILE)
     log.debug(f'gathered dbs {dbs}')
     return dbs
 

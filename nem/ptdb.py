@@ -9,6 +9,7 @@ TODO
 - tests lol
 - unique constraints
 """
+from collections import OrderedDict
 import logging
 import os
 
@@ -167,7 +168,7 @@ class Db:
         self._dbfiles = dbfiles
         self.lib = lib
         self.schema = schema
-        self._dbs = {}
+        self._dbs = OrderedDict()
         self._mutations = {}
 
     @property
@@ -196,7 +197,8 @@ class Db:
             raise DbError('no dbfile specified')
         dbfiles = dbfiles or self._dbfiles
 
-        raw_stores = {}
+        # Note that the databases are added implicitly in order of close-ness
+        # (because dbfiles are ordered)
         for dbfile in dbfiles:
             log.debug(f'loading dbfile {dbfile}')
             if os.path.exists(dbfile) and not os.path.isfile(dbfile):
@@ -209,15 +211,13 @@ class Db:
 
             with open(dbfile, 'r') as f:
                 try:
-                    raw_stores[dbfile] = f.read()
+                    raw = f.read()
                 except toml.decoder.DecodeError as e:
                     log.error(exc_info=True)
                     raise DbError(f'Failed to read dbfile {dbfile}') from e
 
-        for db, raw in raw_stores.items():
             raw_db = self.lib.loads(raw)
-            # self._dbs[db] = self.schema.from_data(raw_db)
-            self._dbs[db] = raw_db
+            self._dbs[dbfile] = raw_db
 
     def _add_mutation(self, _id, field, value):
         if _id not in self._mutations:
@@ -247,7 +247,14 @@ class Db:
             with open(dbname, 'w') as f:
                 print(out, file=f)
 
-    def add(self, inst, dbopts=None):
+    @property
+    def closest(self):
+        return self.dbnames[0]
+
+    def isclosest(self, dbname):
+        return dbname == self.closest
+
+    def add(self, inst, in_dbs=None):
         cls = inst.__class__
         tablename = cls.__table__
 
@@ -258,8 +265,15 @@ class Db:
         # on setattr.
         inst._db = self
         inst._id = id(raw_row)
+
+        in_dbs = in_dbs or set(self._dbtables.keys())
         for dbname, db in self._dbs.items():
-            db['__table__'][tablename].append(raw_row)
+            # if 'closest' is provided, then match with the 'closest'
+            # (directory-wise) dbfile.
+            if 'closest' in in_dbs and self.isclosest(dbname):
+                db['__table__'][tablename].append(raw_row)
+            elif dbname in in_dbs:
+                db['__table__'][tablename].append(raw_row)
 
     def delete(self, inst, dbopts=None):
         cls = inst.__class__

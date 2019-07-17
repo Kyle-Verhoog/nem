@@ -1,0 +1,22 @@
+__version__ = "0.0.0"
+
+[__table__]
+[[__table__.cmds]]
+cmd = "virtualenv --python=python3 .env/"
+code = "mkvenv"
+freq = 0
+desc = ""
+
+[[__table__.cmds]]
+cmd = "source .env/bin/activate.fish"
+code = "actfish"
+freq = 0
+desc = ""
+
+[[__table__.cmds]]
+cmd = "pip install -r requirements.txt"
+code = "pip"
+freq = 1
+desc = ""
+
+
