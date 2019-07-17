@@ -8,14 +8,23 @@ TODO
 - async commits
 - tests lol
 """
+import logging
 import os
+
+from .log import get_logger
+from . import __version__
+
+
+log = get_logger(__name__)
 
 
 class DbError(Exception):
     pass
 
+
 class NoResultFound(DbError):
     pass
+
 
 
 class Schema:
@@ -24,10 +33,14 @@ class Schema:
         return [attr for attr in cls.__dict__ if not attr.startswith('_')]
 
     @classmethod
+    def tablenames(cls):
+        return [attr for attr in cls.attrs() if Model.ismodel(getattr(cls, attr))]
+
+    @classmethod
     def from_data(cls, data):
         for attr in cls.attrs():
             field = getattr(cls, attr)
-            if isinstance(field, type) and issubclass(field, Model):
+            if Model.ismodel(field):
                 data['__table__'][attr] = field.from_raw_table(data['__table__'][attr])
             else:
                 # if attr not in data:
@@ -41,6 +54,10 @@ class Model:
     def __init__(self, *args, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
+
+    @classmethod
+    def ismodel(cls, c):
+        return isinstance(c, type) and issubclass(c, cls)
 
     @classmethod
     def attrs(cls):
@@ -76,11 +93,11 @@ class QuerySet(list):
         super().__init__(rows)
 
     def one(self):
+        # TODO: should raise if > 1 row
         try:
             return self._model(**self._rows[0])
         except IndexError:
             raise NoResultFound
-
 
 
 class Cursor:
@@ -88,8 +105,12 @@ class Cursor:
         self._model = model
         self._dbtables = dbtables
 
-    def _rows(self):
+    def _rows(self, in_dbs=None):
+        dbnames = in_dbs or set(self._dbtables.keys())
         for dbname, table in self._dbtables.items():
+            if dbname not in dbnames:
+                continue
+
             for row in table:
                 yield row
 
@@ -97,13 +118,14 @@ class Cursor:
         return [self._model(**row) for row in self._rows()]
 
     def filter_by(self, **kwargs):
+        in_dbs = kwargs.pop('_in_dbs', None)
         def _row_matches(row):
             matches = True
             for k, v in kwargs.items():
                 if row[k] != v:
                     return False
             return matches
-        return QuerySet(self._model, [row for row in self._rows() if _row_matches(row)])
+        return QuerySet(self._model, [row for row in self._rows(in_dbs) if _row_matches(row)])
 
 
 class Db:
@@ -113,26 +135,47 @@ class Db:
         self.schema = schema
         self._dbs = {}
 
+    @property
+    def dbnames(self):
+        return self._dbfiles
+
+    def empty_db(self):
+        return {
+            'version': __version__,
+            '__table__': {
+                tablename: [] for tablename in self.schema.tablenames()
+            },
+        }
 
     def load(self, dbfiles=None):
         if not dbfiles and not self._dbfiles:
-            raise DbError('No dbfile specified')
+            raise DbError('no dbfile specified')
         dbfiles = dbfiles or self._dbfiles
 
         raw_stores = {}
         for dbfile in dbfiles:
-            if not os.path.exists(dbfile) or not os.path.isfile(dbfile):
-                raise DbError(f'db file {dbfile} does not exist or is not a file')
+            log.debug(f'loading dbfile {dbfile}')
+            if os.path.exists(dbfile) and not os.path.isfile(dbfile):
+                raise DbError(f'dbfile {dbfile} is a directory')
+            if not os.path.exists(dbfile):
+                empty_db = self.lib.dumps(self.empty_db())
+                # Write the file so that it exists even if we crash later on
+                with open(dbfile, 'w') as f:
+                    print(empty_db, file=f)
 
             with open(dbfile, 'r') as f:
-                raw_stores[dbfile] = f.read()
+                try:
+                    raw_stores[dbfile] = f.read()
+                except toml.decoder.DecodeError as e:
+                    log.error(exc_info=True)
+                    raise DbError(f'Failed to read dbfile {dbfile}') from e
 
         for db, raw in raw_stores.items():
             raw_db = self.lib.loads(raw)
             # self._dbs[db] = self.schema.from_data(raw_db)
-            self._dbs[db]  = raw_db
+            self._dbs[db] = raw_db
 
-    def query(self, model):
+    def query(self, model, dbopts=None):
         tables = {
             dbname: db['__table__'][model.__table__]
             for dbname, db in self._dbs.items()

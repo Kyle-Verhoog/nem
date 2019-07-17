@@ -3,27 +3,22 @@ import os
 from os.path import expanduser
 from pathlib import Path
 import sys
+import traceback
 
 import colouredlogs
-from prompt_toolkit import HTML, print_formatted_text as print
-import tabulate
+from prompt_toolkit import HTML, print_formatted_text as print, prompt
 import toml
 
+from .log import get_logger
 from .ptdb import Column, Db, DbError, NoResultFound, Model, Schema
+from .table import mktable
 
 
 DB_FILE = os.environ.get('NEM_DB', str(Path.home().absolute() / '.config' / '.nem.toml'))
 DB_FILE = str(Path(DB_FILE).absolute())
 
 
-log = logging.getLogger(__name__)
-colouredlogs.install(
-    logger=log,
-    level=logging.WARN,
-    stream=sys.stdout,
-    format='%(asctime)s.%(msecs)03d %(levelname)s %(module)s - %(funcName)s: %(message)s',
-    datefmt='%H:%M:%S',
-)
+log = get_logger(__name__)
 
 
 class CODE:
@@ -92,31 +87,31 @@ class Resource:
 class CmdManager(Resource):
     def create(self, opts, args, ctx):
         pwd = ctx.get('pwd')
-        s = ctx.get('sess')
-        cmds = s.query(Command).all()
+        db = ctx.get('db')
+        cmds = db.query(Command).all()
         codes_cmds = { cmd.code: cmd.cmd for cmd in cmds }
         cmd = ' '.join(args)
         code = mkcode(cmd, codes_cmds)
-        s.add(Command(cmd=cmd, code=code, desc='', freq=0))
+        db.add(Command(cmd=cmd, code=code, desc='', freq=0))
         return mkresp(out=f'<ansigreen>added command:</ansigreen> <ansiblue>{code}</ansiblue> = {cmd}')
 
     def edit(self, opts, args, ctx):
-        s = ctx.get('sess')
+        db = ctx.get('db')
         code = args[0]
         new_code = args[1]
         try:
-            cmd = s.query(Command).filter_by(code=code).one()
+            cmd = db.query(Command).filter_by(code=code).one()
             cmd.code = new_code
             return mkresp(out=f'<ansigreen>command <ansiyellow>{cmd.cmd}</ansiyellow> code updated <ansired>{code}</ansired> -> <ansiblue>{new_code}</ansiblue></ansigreen>')
         except NoResultFound:
             return err(out=f'<ansired>code <ansiblue>{code}</ansiblue> not found</ansired>')
 
     def remove(self, opts, args, ctx):
-        s = ctx.get('sess')
+        db = ctx.get('db')
         code = args[0]
         try:
-            cmd = s.query(Command).filter_by(code=code).one()
-            s.delete(cmd)
+            cmd = db.query(Command).filter_by(code=code).one()
+            db.delete(cmd)
             return mkresp(out=f'<ansigreen>removed command <ansired>{cmd.cmd}</ansired> with code</ansigreen> <ansiblue>{cmd.code}</ansiblue>')
         except NoResultFound:
             return err(out=f'<ansired>command for code <ansiblue>{code}</ansiblue> not found</ansired>')
@@ -124,10 +119,23 @@ class CmdManager(Resource):
 
 class CmdTable(Resource):
 
+    def _list_db(self, opts, args, ctx):
+        db = ctx.get('db')
+
+        data = []
+        for dbname in db.dbnames:
+            rows = db.query(Command).filter_by(_in_dbs=[dbname])
+            data.append([dbname, len(rows), ])
+        table = mktable(data, headers=['dbfile', '# entries'])
+        return mkresp(out=f'{table}')
+
+
     def list(self, opts, args, ctx):
-        s = ctx.get('sess')
-        rows = s.query(Command).all()
-        headers = ['command', 'code', 'usages']
+        if opts == 'db':
+            return self._list_db(opts, args, ctx)
+
+        db = ctx.get('db')
+        rows = db.query(Command).all()
 
         def _format(rows):
             if 'v' in opts:
@@ -135,15 +143,11 @@ class CmdTable(Resource):
             else:
                 return [[f'{cmd.cmd}', f'[{cmd.code}]'] for cmd in rows]
 
-        data = _format(rows)
-        table = tabulate.tabulate(
-            data,
-            headers=headers,
-            tablefmt='fancy_grid',
-        )
+        table = mktable(_format(rows), headers=['command', 'code', 'usages'])
         table = table.replace('[', '[<ansiblue>')
         table = table.replace(']', '</ansiblue>]')
-        return mkresp(out=table)
+        dbs = '\n'.join(db.dbnames)
+        return mkresp(out=f'{dbs}\n{table}')
 
 
 class Resources:
@@ -167,7 +171,7 @@ def cmd_w_args(cmd, args):
 
 
 def handle_req(args, ctx):
-    s = ctx.get('sess')
+    db = ctx.get('db')
     if len(args) < 1:
         args.append('/tl')
 
@@ -179,7 +183,7 @@ def handle_req(args, ctx):
             return resp
 
     try:
-        cmd = s.query(Command).filter_by(code=cmd).one()
+        cmd = db.query(Command).filter_by(code=cmd).one()
     except NoResultFound:
         return err(out=f'<ansired>unknown command:</ansired> {cmd}')
 
@@ -191,22 +195,52 @@ def handle_req(args, ctx):
     return mkresp(out=f'<ansigreen>exec:</ansigreen> {ex_cmd}', code=CODE.EXEC, ctx={'cmd': ex_cmd})
 
 
+def gather_dbs():
+    dbs = []
+    if not os.path.exists(DB_FILE):
+        print(HTML(f'<ansired>db file <ansiblue>{DB_FILE}</ansiblue> does not exist</ansired>'))
+        if prompt('create it [y/n]? ') == 'y':
+            dbs.append(DB_FILE)
+
+    d = Path(os.environ.get('PWD'))
+
+    while str(d) != '/':
+        log.debug(f'searching for config directory {d}')
+        db_file = d / '.nem.toml'
+        if os.path.exists(db_file) and os.path.isfile(db_file): # and not in block list
+            dbs.append(str(db_file))
+        d = d.parent
+    log.debug(f'gathered dbs {dbs}')
+    return dbs
+
+
 def nem():
-    db = Db(toml, NemSchema, dbfiles=[DB_FILE])
-    db.load()
-    session = db
-    ctx = {
-        'pwd': os.environ.get('PWD'),
-        'sess': session
-    }
-    args = sys.argv[1:]
+    try:
+        dbs = gather_dbs()
 
-    (out, code, ctx) = handle_req(args, ctx)
+        if not dbs:
+            print(HTML('<ansired>could not find a db file to use!</ansired>'))
+            return
 
-    if code == CODE.EXEC:
-        print(HTML(out))
-        os.system(ctx['cmd'])
-    else:
-        print(HTML(out))
+        db = Db(toml, NemSchema, dbfiles=dbs)
+        db.load()
 
-    session.commit()
+        ctx = {
+            'pwd': os.environ.get('PWD'),
+            'db': db,
+        }
+        args = sys.argv[1:]
+        (out, code, ctx) = handle_req(args, ctx)
+
+        if code == CODE.EXEC:
+            print(HTML(out))
+            os.system(ctx['cmd'])
+        else:
+            print(HTML(out))
+
+        db.commit()
+    except DbError:
+        log.error('', exc_info=True)
+        print(HTML('<ansired>a database error has occurred:\n{traceback.format_exc()}</ansired>'))
+    except KeyboardInterrupt:
+        pass
