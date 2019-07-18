@@ -192,16 +192,19 @@ class CmdRes(Resource):
         rev_dbnames = list(db.dbnames)
         rev_dbnames.reverse()
         for dbname in rev_dbnames:
-            dbcodes = [code for code, meta in codes.items() if dbname in meta['dbs']]
+            dbcodes = [code for code, meta in codes.items() if dbname in meta['dbs'] and code in codes_left]
             codes_left = codes_left - set(dbcodes)
             for code in dbcodes:
                 meta = codes[code]
                 cmd = meta['cmd']
                 desc = meta['desc']
+                dbids = [str(db.dbname_to_i(dbname)) for dbname in meta['dbs']]
                 if 'v' in opts:
-                    table_rows.append([cmd, f'[{code}]', desc])
+                    sources = ','.join(dbids) if len(dbids) > 1 else ''
+                    sources = f'({sources})' if sources else ''
+                    table_rows.append([f'{cmd} {sources}', f'[{code}]', desc])
                 else:
-                    table_rows.append([cmd, f'[{code}]'])
+                    table_rows.append([f'{cmd}', f'[{code}]'])
 
         if 'v' in opts:
             headers = ['command', 'code', 'description']
@@ -211,7 +214,10 @@ class CmdRes(Resource):
         table = mktable(table_rows, headers=headers)
         table = table.replace('[', '[<ansiblue>')
         table = table.replace(']', '</ansiblue>]')
-        dbs = '\n'.join([f'(db {db.dbname_to_i(dbname)}) {dbname}' for dbname in db.dbnames])
+        if 'v' in opts:
+            dbs = '\n'.join([f'(db {db.dbname_to_i(dbname)}) {dbname}' for dbname in db.dbnames])
+        else:
+            dbs = ''
         return mkresp(out=f'{dbs}\n{table}')
 
     def remove(self, opts, args, ctx):
@@ -270,12 +276,17 @@ def handle_req(args, ctx):
         if resp:
             return resp
 
-    try:
-        cmd = db.query(Command).filter_by(code=cmd).one()
-    except NoResultFound:
-        return err(out=f'<ansired>unknown command:</ansired> {cmd}')
+    # if finding a resource falls through, interpret the first arg
+    # as a code
+    code = args[0]
 
-    ex_cmd = cmd.cmd
+    try:
+        codes = resolve_codes(db)
+        ex_cmd = codes[code]['cmd']
+    except IndexError:
+        return err(out=f'<ansired>unknown command:</ansired> {code}')
+
+    print(ex_cmd)
     # if there are args, fill them in
     if len(args) > 1:
         ex_cmd = cmd_w_args(ex_cmd, args[1:])

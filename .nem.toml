@@ -16,4 +16,9 @@ cmd = "pip install -r requirements.txt"
 code = "pip"
 desc = ""
 
+[[__table__.cmds]]
+cmd = "git diff"
+code = "gd"
+desc = ""
+
 
