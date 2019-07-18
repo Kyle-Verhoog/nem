@@ -147,14 +147,12 @@ class Cursor:
 
     def _rows(self, in_dbs=None):
         dbnames = in_dbs or set(self._dbtables.keys())
-        for dbname, table in self._dbtables.items():
-            if dbname not in dbnames:
-                continue
-            for row in table:
+        for dbname in dbnames:
+            for row in self._dbtables[dbname]:
                 yield row
 
-    def all(self):
-        return [self._model(_db=self._db, _id=id(row), **row) for row in self._rows()]
+    def all(self, in_dbs=None):
+        return [self._model(_db=self._db, _id=id(row), **row) for row in self._rows(in_dbs=in_dbs)]
 
     def filter_by(self, **kwargs):
         in_dbs = kwargs.pop('_in_dbs', None)
@@ -285,10 +283,12 @@ class Db:
             elif dbname in in_dbs:
                 db['__table__'][tablename].append(raw_row)
 
-    def delete(self, inst, dbopts=None):
+    def delete(self, inst, in_dbs=None):
         cls = inst.__class__
         tablename = cls.__table__
 
-        for dbname, db in self._dbs.items():
+        dbnames = in_dbs or set(self._dbs.keys())
+        for dbname in dbnames:
+            db = self._dbs[dbname]
             new_rows = [row for row in db['__table__'][tablename] if not inst.eq_raw_row(row)]
             db['__table__'][tablename] = new_rows

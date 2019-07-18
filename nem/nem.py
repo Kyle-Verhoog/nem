@@ -155,7 +155,7 @@ class CmdRes(Resource):
         """
         pwd = ctx.get('pwd')
         db = ctx.get('db')
-        cmds = db.query(Command).all()
+        cmds = db.query(Command).all(in_dbs=[db.closest])
         codes_cmds = { cmd.code: cmd.cmd for cmd in cmds }
         cmd = ' '.join(args)
         code = mkcode(cmd, codes_cmds)
@@ -224,8 +224,8 @@ class CmdRes(Resource):
         db = ctx.get('db')
         code = args[0]
         try:
-            cmd = db.query(Command).filter_by(code=code).one()
-            db.delete(cmd)
+            cmd = db.query(Command).filter_by(code=code, _in_dbs=[db.closest]).one()
+            db.delete(cmd, in_dbs=[db.closest])
             return mkresp(out=f'<ansigreen>removed command <ansired>{cmd.cmd}</ansired> with code</ansigreen> <ansiblue>{cmd.code}</ansiblue>')
         except NoResultFound:
             return err(out=f'<ansired>command for code <ansiblue>{code}</ansiblue> not found</ansired>')
