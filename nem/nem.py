@@ -12,6 +12,7 @@ import toml
 from .log import get_logger
 from .ptdb import Column, Db, DbError, NoResultFound, Model, Schema
 from .table import mktable
+from . import __version__
 
 
 # Note the 'root' is not actually at the root directory and is a special case
@@ -46,7 +47,7 @@ class Command(Model):
 
 
 class NemSchema(Schema):
-    version = '0.0.1'
+    version = __version__
     cmds = Command
 
 
@@ -158,7 +159,7 @@ class CmdRes(Resource):
         codes_cmds = { cmd.code: cmd.cmd for cmd in cmds }
         cmd = ' '.join(args)
         code = mkcode(cmd, codes_cmds)
-        db.add(Command(cmd=cmd, code=code, desc='', freq=0), in_dbs=['closest'])
+        db.add(Command(cmd=cmd, code=code, desc=''), in_dbs=['closest'])
         return mkresp(out=f'<ansigreen>added command:</ansigreen> <ansiblue>{code}</ansiblue> = <ansiyellow>{cmd}</ansiyellow><ansigreen> to {db.closest}</ansigreen>')
 
     def document(self, opts, args, ctx):
@@ -182,7 +183,36 @@ class CmdRes(Resource):
         pass
 
     def list(self, opts, args, ctx):
-        pass
+        # Want most relevant (closer) dbfiles listed at bottom
+        db = ctx.get('db')
+        codes = resolve_codes(db)
+
+        table_rows = []
+        codes_left = set(codes.keys())
+        rev_dbnames = list(db.dbnames)
+        rev_dbnames.reverse()
+        for dbname in rev_dbnames:
+            dbcodes = [code for code, meta in codes.items() if dbname in meta['dbs']]
+            codes_left = codes_left - set(dbcodes)
+            for code in dbcodes:
+                meta = codes[code]
+                cmd = meta['cmd']
+                desc = meta['desc']
+                if 'v' in opts:
+                    table_rows.append([cmd, f'[{code}]', desc])
+                else:
+                    table_rows.append([cmd, f'[{code}]'])
+
+        if 'v' in opts:
+            headers = ['command', 'code', 'description']
+        else:
+            headers = ['command', 'code']
+
+        table = mktable(table_rows, headers=headers)
+        table = table.replace('[', '[<ansiblue>')
+        table = table.replace(']', '</ansiblue>]')
+        dbs = '\n'.join([f'(db {db.dbname_to_i(dbname)}) {dbname}' for dbname in db.dbnames])
+        return mkresp(out=f'{dbs}\n{table}')
 
     def remove(self, opts, args, ctx):
         db = ctx.get('db')
@@ -195,43 +225,10 @@ class CmdRes(Resource):
             return err(out=f'<ansired>command for code <ansiblue>{code}</ansiblue> not found</ansired>')
 
 
-class CmdTable(Resource):
-    def _list_db(self, opts, args, ctx):
-        db = ctx.get('db')
-
-        data = []
-        for dbname in db.dbnames:
-            rows = db.query(Command).filter_by(_in_dbs=[dbname])
-            data.append([dbname, len(rows), ])
-        table = mktable(data, headers=['dbfile', '# entries'])
-        return mkresp(out=f'{table}')
-
-    def list(self, opts, args, ctx):
-        if opts == 'db':
-            return self._list_db(opts, args, ctx)
-
-        db = ctx.get('db')
-        rows = db.query(Command).all()
-        rows.reverse()
-
-        def _format(rows):
-            if 'v' in opts:
-                return [[f'{cmd.cmd}', f'[{cmd.code}]', f'{cmd.desc}'] for cmd in rows]
-            else:
-                return [[f'{cmd.cmd}', f'[{cmd.code}]'] for cmd in rows]
-
-        table = mktable(_format(rows), headers=['command', 'code', 'description'])
-        table = table.replace('[', '[<ansiblue>')
-        table = table.replace(']', '</ansiblue>]')
-        dbs = '\n'.join(db.dbnames)
-        return mkresp(out=f'{dbs}\n{table}')
-
-
 class Resources:
     class _Resources:
         commands = CmdRes()
         help = Help()
-        table = CmdTable()
 
     @classmethod
     def resourcenames(cls):
@@ -264,7 +261,7 @@ def cmd_w_args(cmd, args):
 def handle_req(args, ctx):
     db = ctx.get('db')
     if len(args) < 1:
-        args.append('/tl')
+        args.append('/cl')
 
     cmd = args[0]
 
@@ -282,7 +279,6 @@ def handle_req(args, ctx):
     # if there are args, fill them in
     if len(args) > 1:
         ex_cmd = cmd_w_args(ex_cmd, args[1:])
-    cmd.freq += 1
     return mkresp(out=f'<ansigreen>exec:</ansigreen> {ex_cmd}', code=CODE.EXEC, ctx={'cmd': ex_cmd})
 
 
@@ -304,6 +300,34 @@ def gather_dbfiles():
     return dbs
 
 
+def resolve_codes(db):
+    cursor = db.query(Command)
+    codes = {}
+    for dbname, row in cursor.rows():
+        row_code = row['code']
+        if row_code not in codes:
+            codes[row_code] = dict(
+                dbs=[dbname],
+                cmd=row['cmd'],
+                desc=row['desc'],
+            )
+        elif codes[row_code]['cmd'] == row['cmd']:
+            # duplicate entry, add to the dbs list
+            codes[row_code]['dbs'].append(dbname)
+        else:
+            # for conflicts, postfix db code to code until no conflicts
+            i = db.dbname_to_i(dbname)
+            code = f'{row_code}{i}'
+            while code not in codes:
+                code = f'{code}{i}'
+            codes[code] = dict(
+                dbs=[dbname],
+                cmd=row['cmd'],
+                desc=row['desc'],
+            )
+    return codes
+
+
 def nem():
     try:
         dbs = gather_dbfiles()
@@ -314,6 +338,8 @@ def nem():
 
         db = Db(toml, NemSchema, dbfiles=dbs)
         db.load()
+
+        # codes = resolve_codes(db)
 
         ctx = {
             'pwd': os.environ.get('PWD'),

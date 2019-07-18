@@ -12,9 +12,9 @@ TODO
 from collections import OrderedDict
 import logging
 import os
+# from packaging import version
 
 from .log import get_logger
-from . import __version__
 
 
 log = get_logger(__name__)
@@ -140,12 +140,16 @@ class Cursor:
         self._model = model
         self._dbtables = dbtables
 
+    def rows(self):
+        for dbname, table in self._dbtables.items():
+            for row in table:
+                yield (dbname, row)
+
     def _rows(self, in_dbs=None):
         dbnames = in_dbs or set(self._dbtables.keys())
         for dbname, table in self._dbtables.items():
             if dbname not in dbnames:
                 continue
-
             for row in table:
                 yield row
 
@@ -175,6 +179,12 @@ class Db:
     def dbnames(self):
         return self._dbfiles
 
+    def dbname_to_i(self, dbname):
+        return self.dbnames.index(dbname)
+
+    def i_to_dbname(self, i):
+        return self.dbnames[i]
+
     @property
     def rows(self):
         # generator for all rows in all database.. yikes
@@ -186,7 +196,7 @@ class Db:
 
     def empty_db(self):
         return {
-            'version': __version__,
+            'version': self.schema.version,
             '__table__': {
                 tablename: [] for tablename in self.schema.tablenames()
             },
