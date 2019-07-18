@@ -212,7 +212,7 @@ class Db:
             with open(dbfile, 'r') as f:
                 try:
                     raw = f.read()
-                except toml.decoder.DecodeError as e:
+                except Exception as e:
                     log.error(exc_info=True)
                     raise DbError(f'Failed to read dbfile {dbfile}') from e
 

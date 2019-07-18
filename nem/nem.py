@@ -3,6 +3,7 @@ import os
 from os.path import expanduser
 from pathlib import Path
 import sys
+from textwrap import dedent
 import traceback
 
 from prompt_toolkit import HTML, print_formatted_text as print, prompt
@@ -25,16 +26,24 @@ class CODE:
     EXEC = 1
 
 
+class Ignore(Model):
+    __table__ = 'ignore'
+
+    item = Column() # eg. ~/.nem.toml, git*
+    type = Column() # eg. dbfile,      cmdrule
+
+
+
 class Command(Model):
     __table__ = 'cmds'
 
     cmd = Column()
     code = Column()
-    freq = Column()
     desc = Column()
 
     def __repr__(self):
         return f'<Command(cmd={self.cmd} code={self.code})>'
+
 
 class NemSchema(Schema):
     version = '0.0.1'
@@ -74,18 +83,75 @@ def mkcode(cmd, codes):
 
 
 class Resource:
-    def handle(self, cmd, args, ctx):
+    __resname__ = 'Resource'
+
+    def help(self, cmd, args, ctx):
+        return mkresp(out=f'TODO: help')
+
+    @property
+    def _attrs(self):
+        return [attr for attr in dir(self) if not attr.startswith('_')]
+
+    @property
+    def _doc(self):
+        resname = self.__resname__.lower()
+        # doc = f' <ansiblue>{resname[0]}</ansiblue>{resname[1:]}\n'
+        doc = ''
+        for attr in self._attrs:
+            m = getattr(self, attr)
+            doc += f' <ansiblue>{resname[0]}</ansiblue>{resname[1:]}\n'
+            doc += f'  <ansiblue>{attr[0]}</ansiblue>{attr[1:]}:\n'
+            doc += f'      {dedent((m.__doc__ or "TODO").strip())}'
+            doc += '\n'
+        doc = doc[0:-1]
+        return doc
+
+    def _handle(self, cmd, args, ctx):
         try:
-            attr = [attr for attr in dir(self) if not attr.startswith('__') and attr.startswith(cmd[0])]
-            handler = getattr(self, attr[0])
+            if not cmd:
+                handler = self.help
+            else:
+                attrs = [attr for attr in self._attrs if attr.startswith(cmd[0])]
+                handler = getattr(self, attrs[0])
             return handler(cmd[1:], args, ctx)
         except Exception:
-            log.error(f'failed on command {cmd}', exc_info=True)
-            return err(out=f'command {cmd} failed or does not exist on resource {self.__class__.__name__}')
+            log.warn(f'failed on command {cmd}', exc_info=True)
+            return err(out=f'<ansired>command {cmd} failed or does not exist on resource {self.__class__.__resname__}</ansired>')
 
 
-class CmdManager(Resource):
+class Help(Resource):
+    __resname__ = 'Help'
+
+    @property
+    def _resource_docs(self):
+        docs = ''
+        for resource in Resources.resources():
+            docs += resource._doc
+        return docs
+
+    def help(self, cmd, args, ctx):
+        doc =\
+        """\
+        M<ansiblue>NEM</ansiblue>ONICS
+        <ansiblue>ttmytabptb</ansiblue>
+        trying to make your terminal a better place to be
+
+        <ansiblue>/</ansiblue>
+        {resource_docs}
+        """
+        doc = dedent(doc)
+        doc = doc.format(resource_docs=self._resource_docs)
+        return mkresp(out=doc)
+
+
+class CmdRes(Resource):
+    __resname__ = 'Command'
+
+    # @arg_parse parses args for
     def create(self, opts, args, ctx):
+        """
+        Creates a command
+        """
         pwd = ctx.get('pwd')
         db = ctx.get('db')
         cmds = db.query(Command).all()
@@ -94,6 +160,12 @@ class CmdManager(Resource):
         code = mkcode(cmd, codes_cmds)
         db.add(Command(cmd=cmd, code=code, desc='', freq=0), in_dbs=['closest'])
         return mkresp(out=f'<ansigreen>added command:</ansigreen> <ansiblue>{code}</ansiblue> = <ansiyellow>{cmd}</ansiyellow><ansigreen> to {db.closest}</ansigreen>')
+
+    def document(self, opts, args, ctx):
+        """
+        Document a command
+        """
+        pass
 
     def edit(self, opts, args, ctx):
         db = ctx.get('db')
@@ -105,6 +177,12 @@ class CmdManager(Resource):
             return mkresp(out=f'<ansigreen>command <ansiyellow>{cmd.cmd}</ansiyellow> code updated <ansired>{code}</ansired> -> <ansiblue>{new_code}</ansiblue></ansigreen>')
         except NoResultFound:
             return err(out=f'<ansired>code <ansiblue>{code}</ansiblue> not found</ansired>')
+
+    def find(self, opts, args, ctx):
+        pass
+
+    def list(self, opts, args, ctx):
+        pass
 
     def remove(self, opts, args, ctx):
         db = ctx.get('db')
@@ -138,11 +216,11 @@ class CmdTable(Resource):
 
         def _format(rows):
             if 'v' in opts:
-                return [[f'{cmd.cmd}', f'[{cmd.code}]', f'{cmd.freq}'] for cmd in rows]
+                return [[f'{cmd.cmd}', f'[{cmd.code}]', f'{cmd.desc}'] for cmd in rows]
             else:
                 return [[f'{cmd.cmd}', f'[{cmd.code}]'] for cmd in rows]
 
-        table = mktable(_format(rows), headers=['command', 'code', 'usages'])
+        table = mktable(_format(rows), headers=['command', 'code', 'description'])
         table = table.replace('[', '[<ansiblue>')
         table = table.replace(']', '</ansiblue>]')
         dbs = '\n'.join(db.dbnames)
@@ -150,16 +228,30 @@ class CmdTable(Resource):
 
 
 class Resources:
-    commands = CmdManager()
-    table = CmdTable()
+    class _Resources:
+        commands = CmdRes()
+        help = Help()
+        table = CmdTable()
 
     @classmethod
-    def interpret(cls, cmd, args, ctx):
-        resource = [r for r in dir(cls) if not r.startswith('__') and r.startswith(cmd[0])]
-        if not resource or not hasattr(cls, resource[0]):
+    def resourcenames(cls):
+        return [r for r in dir(cls._Resources) if not r.startswith('__')]
+
+    @classmethod
+    def resources(cls):
+        return [getattr(cls._Resources, resname) for resname in cls.resourcenames()]
+
+    @classmethod
+    def hasresource(cls, name):
+        return hasattr(cls._Resources, name)
+
+    @classmethod
+    def _interpret(cls, cmd, args, ctx):
+        resname = [r for r in cls.resourcenames() if r.startswith(cmd[0])]
+        if not resname or not cls.hasresource(resname[0]):
             return None
-        resource = getattr(cls, resource[0])
-        return resource.handle(cmd[1:], args, ctx)
+        resource = getattr(cls._Resources, resname[0])
+        return resource._handle(cmd[1:], args, ctx)
 
 
 def cmd_w_args(cmd, args):
@@ -177,7 +269,7 @@ def handle_req(args, ctx):
     cmd = args[0]
 
     if cmd.startswith('/'):
-        resp = Resources.interpret(cmd[1:], args[1:], ctx)
+        resp = Resources._interpret(cmd[1:], args[1:], ctx)
         if resp:
             return resp
 
