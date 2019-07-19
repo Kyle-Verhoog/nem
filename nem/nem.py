@@ -302,9 +302,9 @@ def gather_dbfiles():
         if os.path.exists(db_file) and os.path.isfile(db_file): # and not in block list
             dbs.append(str(db_file))
         d = d.parent
-        
+
     if os.path.exists(DB_FILE):
-        if os.path.isfile(db_file):
+        if os.path.isfile(DB_FILE):
             dbs.append(DB_FILE)
     else:
         print(HTML(f'<ansired>db file <ansiblue>{DB_FILE}</ansiblue> does not exist</ansired>'))
