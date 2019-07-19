@@ -305,8 +305,11 @@ def gather_dbfiles():
 
     if not os.path.exists(DB_FILE):
         print(HTML(f'<ansired>db file <ansiblue>{DB_FILE}</ansiblue> does not exist</ansired>'))
+        # do not create db if it doesn't exist and user doesn't want it
         if prompt('create it [y/n]? ') == 'y':
             dbs.append(DB_FILE)
+    else:
+        dbs.append(DB_FILE)
     log.debug(f'gathered dbs {dbs}')
     return dbs
 
