@@ -24,6 +24,7 @@ log = get_logger(__name__)
 
 
 class CODE:
+    ERR = -1
     EXEC = 1
 
 
@@ -59,7 +60,7 @@ def mkresp(out='', code=0, ctx=None):
 
 def err(**kwargs):
     out = f'<ansired>{kwargs.get("out")}</ansired>'
-    kwargs.update(code=-1, out=out)
+    kwargs.update(code=CODE.ERR, out=out)
     return mkresp(**kwargs)
 
 
@@ -380,11 +381,11 @@ def nem():
         args = sys.argv[1:]
         (out, code, ctx) = handle_req(args, ctx)
 
+        was_err = code == CODE.ERR
+        print(HTML(out), file=sys.stderr if was_err else sys.stdout)
+
         if code == CODE.EXEC:
-            print(HTML(out))
             os.system(ctx['cmd'])
-        else:
-            print(HTML(out))
 
         db.commit()
     except DbError:
