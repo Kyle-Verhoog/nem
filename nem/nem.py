@@ -303,16 +303,14 @@ def gather_dbfiles():
             dbs.append(str(db_file))
         d = d.parent
 
-    if os.path.exists(DB_FILE):
-        if os.path.isfile(DB_FILE):
-            dbs.append(DB_FILE)
-    else:
+    if not os.path.exists(DB_FILE):
         print(HTML(f'<ansired>db file <ansiblue>{DB_FILE}</ansiblue> does not exist</ansired>'))
         # do not create db if it doesn't exist and user doesn't want it
         if prompt('create it [y/n]? ') == 'y':
             dbs.append(DB_FILE)
-    else:
+    elif os.path.isfile(DB_FILE):
         dbs.append(DB_FILE)
+
     log.debug(f'gathered dbs {dbs}')
     return dbs
 
@@ -374,6 +372,6 @@ def nem():
         db.commit()
     except DbError:
         log.error('', exc_info=True)
-        print(HTML('<ansired>a database error has occurred:\n{traceback.format_exc()}</ansired>'))
+        print(HTML(f'<ansired>a database error has occurred:\n{traceback.format_exc()}</ansired>'))
     except KeyboardInterrupt:
         pass

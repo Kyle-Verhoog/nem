@@ -2,6 +2,8 @@ import os
 import re
 from setuptools import find_packages, setup
 
+import fastentrypoints
+
 
 def get_version(package):
     init_py = open(os.path.join(package, '__init__.py')).read()
