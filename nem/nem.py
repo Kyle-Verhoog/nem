@@ -58,7 +58,8 @@ def mkresp(out='', code=0, ctx=None):
 
 
 def err(**kwargs):
-    kwargs.update(code=-1)
+    out = f'<ansired>{kwargs.get("out")}</ansired>'
+    kwargs.update(code=-1, out=out)
     return mkresp(**kwargs)
 
 
@@ -143,6 +144,21 @@ class Help(Resource):
         doc = dedent(doc)
         doc = doc.format(resource_docs=self._resource_docs)
         return mkresp(out=doc)
+
+
+class NemRes(Resource):
+    __resname__ = 'nem'
+
+    # @argument(name='', description='', validate=)
+    def init(self, opts, args, ctx):
+        """
+        Initializes a new empty nem file in each of the paths provided.
+        """
+        db = ctx.get('db')
+        dbfiles = args
+        db.load(dbfiles=dbfiles)
+        str_dbfiles = ' '.join(dbfiles)
+        return mkresp(out=f'<ansigreen>successfully created dbfile{s if len(dbfiles) > 1 else ""} "{str_dbfiles}"</ansigreen>')
 
 
 class CmdRes(Resource):
@@ -234,6 +250,7 @@ class CmdRes(Resource):
 class Resources:
     class _Resources:
         commands = CmdRes()
+        nem = NemRes()
         help = Help()
 
     @classmethod
