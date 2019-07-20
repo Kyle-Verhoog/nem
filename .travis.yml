@@ -8,5 +8,7 @@ env:
 cache:
   directories:
   - $HOME/.cache/pip
+install:
+  - pip install git+https://github.com/kyle-verhoog/nem.git
 script:
-- python -m unittest discover tests/
+- python -m unittest discover -v tests/
