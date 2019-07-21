@@ -22,6 +22,7 @@ setup(
     entry_points={
         'console_scripts': [
             'n = nem.nem:nem',
+            'nem = nem.nem:nem',
         ],
     },
     long_description_content_type='text/markdown',
