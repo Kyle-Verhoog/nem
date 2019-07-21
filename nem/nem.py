@@ -32,9 +32,14 @@ class CODE:
 class Ignore(Model):
     __table__ = 'ignore'
 
-    item = Column() # eg. ~/.nem.toml, git*
-    type = Column() # eg. dbfile,      cmdrule
+    item = Column()  # eg. ~/.nem.toml, git*
+    type = Column()  # eg. dbfile,      cmdrule
 
+
+class Include(Model):
+    __table__ = 'ignore'
+
+    item = Column()  # eg. ~/.nem.toml, '~/.config/nem/.git.nem.toml'
 
 
 class Command(Model):
@@ -153,6 +158,18 @@ class Help(Resource):
 
 
 def opt(**_kwargs):
+    # Decorator for documenting and validating opts to a resource
+    def dec(f):
+        f.__doc__ += f'\n<ansiblue>{_kwargs.get("name")}</ansiblue>: {_kwargs.get("desc")}'
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            return f(*args, **kwargs)
+        return wrapper
+    return dec
+
+
+def arg(**_kwargs):
+    # Decorator for documenting and validating arguments to a resource
     def dec(f):
         f.__doc__ += f'\n<ansiblue>{_kwargs.get("name")}</ansiblue>: {_kwargs.get("desc")}'
         @wraps(f)
@@ -193,13 +210,18 @@ class CmdRes(Resource):
         db.add(Command(cmd=cmd, code=code, desc=''), in_dbs=['closest'])
         return mkresp(out=f'<ansigreen>added command:</ansigreen> <ansiblue>{code}</ansiblue> = <ansiyellow>{cmd}</ansiyellow><ansigreen> to {db.closest}</ansigreen>')
 
+    # @arg(name='code', position='0', desc='code of the command to document')
+    # @arg(name='documentation', position='1', desc='the documentation to give the command')
     def document(self, opts, args, ctx):
         """
-        Document a command
+        Documents a command
         """
         pass
 
     def edit(self, opts, args, ctx):
+        """
+        Edits the code for a command.
+        """
         db = ctx.get('db')
         code = args[0]
         new_code = args[1]
@@ -210,10 +232,10 @@ class CmdRes(Resource):
         except NoResultFound:
             return err(out=f'<ansired>code <ansiblue>{code}</ansiblue> not found</ansired>')
 
-
+    # @arg(name='query', position='*', desc='what to search for')
     def find(self, opts, args, ctx):
         """
-        Finds all commands matching a given string
+        Finds all commands matching <ansiyellow>query</ansiyellow>
         """
         db = ctx.get('db')
         codes = resolve_codes(db)
@@ -230,7 +252,7 @@ class CmdRes(Resource):
         table = table.replace(']', '</ansiblue>]')
         return mkresp(out=f'{table}')
 
-    @opt(name='v', desc='verbose mode - prints extra data')
+    @opt(name='v', desc='verbose mode - prints extra data like the nem file the command was found in')
     def list(self, opts, args, ctx):
         """
         Lists all commands from in nem files in a table.
@@ -280,7 +302,7 @@ class CmdRes(Resource):
             db.delete(cmd, in_dbs=[db.closest])
             return mkresp(out=f'<ansigreen>removed command <ansired>{cmd.cmd}</ansired> with code</ansigreen> <ansiblue>{cmd.code}</ansiblue>')
         except NoResultFound:
-            return err(out=f'<ansired>command for code <ansiblue>{code}</ansiblue> not found</ansired>')
+            return err(out=f'<ansired>command for code <ansiblue>{code}</ansiblue> not found</ansired> in nem file {db.closest}')
 
 
 class Resources:
