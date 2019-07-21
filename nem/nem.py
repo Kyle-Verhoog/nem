@@ -301,7 +301,7 @@ def handle_req(args, ctx):
     try:
         codes = resolve_codes(db)
         ex_cmd = codes[code]['cmd']
-    except IndexError:
+    except (IndexError, KeyError):
         return err(out=f'<ansired>unknown command:</ansired> {code}')
 
     print(ex_cmd)
@@ -321,14 +321,7 @@ def gather_dbfiles():
             dbs.append(str(db_file))
         d = d.parent
 
-    if not os.path.exists(DB_FILE):
-        print(HTML(f'<ansired>db file <ansiblue>{DB_FILE}</ansiblue> does not exist</ansired>'))
-        # do not create db if it doesn't exist and user doesn't want it
-        if prompt('create it [y/n]? ') == 'y':
-            dbs.append(DB_FILE)
-    elif os.path.isfile(DB_FILE):
-        dbs.append(DB_FILE)
-
+    dbs.append(DB_FILE)
     log.debug(f'gathered dbs {dbs}')
     return dbs
 
@@ -386,6 +379,8 @@ def nem():
             os.system(ctx['cmd'])
 
         db.commit()
+
+        sys.exit(1 if was_err else 0)
     except DbError:
         log.error('', exc_info=True)
         print(HTML(f'<ansired>a database error has occurred:\n{traceback.format_exc()}</ansired>'))
