@@ -3,7 +3,6 @@ python:
 - '3.7'
 sudo: false
 env:
-- export TZ=America/Toronto
 - export CI=travis
 cache:
   directories:
