@@ -1,3 +1,4 @@
+from functools import wraps
 import logging
 import os
 from os.path import expanduser
@@ -98,13 +99,17 @@ class Resource:
     @property
     def _doc(self):
         resname = self.__resname__.lower()
-        # doc = f' <ansiblue>{resname[0]}</ansiblue>{resname[1:]}\n'
         doc = ''
         for attr in self._attrs:
             m = getattr(self, attr)
             doc += f' <ansiblue>{resname[0]}</ansiblue>{resname[1:]}\n'
             doc += f'  <ansiblue>{attr[0]}</ansiblue>{attr[1:]}:\n'
-            doc += f'      {dedent((m.__doc__ or "TODO").strip())}'
+            if m.__doc__:
+                _doc = '\n    '.join([dedent(d) for d in m.__doc__.split('\n')])
+                _doc = _doc
+            else:
+                _doc = 'TODO'
+            doc += f'    {_doc.strip()}'
             doc += '\n'
         doc = doc[0:-1]
         return doc
@@ -145,6 +150,16 @@ class Help(Resource):
         doc = dedent(doc)
         doc = doc.format(resource_docs=self._resource_docs)
         return mkresp(out=doc)
+
+
+def opt(**_kwargs):
+    def dec(f):
+        f.__doc__ += f'\n<ansiblue>{_kwargs.get("name")}</ansiblue>: {_kwargs.get("desc")}'
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            return f(*args, **kwargs)
+        return wrapper
+    return dec
 
 
 class NemRes(Resource):
@@ -199,7 +214,11 @@ class CmdRes(Resource):
     def find(self, opts, args, ctx):
         pass
 
+    @opt(name='v', desc='verbose mode - prints extra data')
     def list(self, opts, args, ctx):
+        """
+        Lists all commands from in nem files in a table.
+        """
         # Want most relevant (closer) dbfiles listed at bottom
         db = ctx.get('db')
         codes = resolve_codes(db)
@@ -217,14 +236,14 @@ class CmdRes(Resource):
                 desc = meta['desc']
                 dbids = [str(db.dbname_to_i(dbname)) for dbname in meta['dbs']]
                 if 'v' in opts:
-                    sources = ','.join(dbids) if len(dbids) > 1 else ''
-                    sources = f'({sources})' if sources else ''
-                    table_rows.append([f'{cmd} {sources}', f'[{code}]', desc])
+                    sources = ','.join(dbids) # if len(dbids) > 1 else ''
+                    # sources = f'({sources})' if sources else ''
+                    table_rows.append([f'{cmd}', f'{sources}', f'[{code}]', desc])
                 else:
                     table_rows.append([f'{cmd}', f'[{code}]'])
 
         if 'v' in opts:
-            headers = ['command', 'code', 'description']
+            headers = ['command', 'file', 'code', 'description']
         else:
             headers = ['command', 'code']
 
