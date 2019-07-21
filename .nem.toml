@@ -26,4 +26,9 @@ cmd = "python -m unittest discover tests/"
 code = "ptest"
 desc = ""
 
+[[__table__.cmds]]
+cmd = "env CI=true python -m unittest discover tests/"
+code = "ptestci"
+desc = ""
+
 

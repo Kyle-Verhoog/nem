@@ -372,8 +372,6 @@ def nem():
         db = Db(toml, NemSchema, dbfiles=dbs)
         db.load()
 
-        # codes = resolve_codes(db)
-
         ctx = {
             'pwd': os.environ.get('PWD'),
             'db': db,
