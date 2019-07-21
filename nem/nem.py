@@ -185,7 +185,6 @@ class CmdRes(Resource):
         """
         Creates a command
         """
-        pwd = ctx.get('pwd')
         db = ctx.get('db')
         cmds = db.query(Command).all(in_dbs=[db.closest])
         codes_cmds = { cmd.code: cmd.cmd for cmd in cmds }
@@ -211,8 +210,25 @@ class CmdRes(Resource):
         except NoResultFound:
             return err(out=f'<ansired>code <ansiblue>{code}</ansiblue> not found</ansired>')
 
+
     def find(self, opts, args, ctx):
-        pass
+        """
+        Finds all commands matching a given string
+        """
+        db = ctx.get('db')
+        codes = resolve_codes(db)
+        searchstr = ' '.join(args)
+
+        def _matches(cmd, query):
+            if query in cmd['cmd']:
+                return True
+            return False
+        matches = [[cmd['cmd'], f'[{code}]', cmd['desc']] for code, cmd in codes.items() if _matches(cmd, searchstr)]
+        headers = ['command', 'code', 'description']
+        table = mktable(matches, headers=headers)
+        table = table.replace('[', '[<ansiblue>')
+        table = table.replace(']', '</ansiblue>]')
+        return mkresp(out=f'{table}')
 
     @opt(name='v', desc='verbose mode - prints extra data')
     def list(self, opts, args, ctx):
@@ -236,8 +252,7 @@ class CmdRes(Resource):
                 desc = meta['desc']
                 dbids = [str(db.dbname_to_i(dbname)) for dbname in meta['dbs']]
                 if 'v' in opts:
-                    sources = ','.join(dbids) # if len(dbids) > 1 else ''
-                    # sources = f'({sources})' if sources else ''
+                    sources = ','.join(dbids)
                     table_rows.append([f'{cmd}', f'{sources}', f'[{code}]', desc])
                 else:
                     table_rows.append([f'{cmd}', f'[{code}]'])
@@ -252,9 +267,10 @@ class CmdRes(Resource):
         table = table.replace(']', '</ansiblue>]')
         if 'v' in opts:
             dbs = '\n'.join([f'(db {db.dbname_to_i(dbname)}) {dbname}' for dbname in db.dbnames])
+            dbs += '\n'
         else:
             dbs = ''
-        return mkresp(out=f'{dbs}\n{table}')
+        return mkresp(out=f'{dbs}{table}')
 
     def remove(self, opts, args, ctx):
         db = ctx.get('db')
@@ -323,7 +339,6 @@ def handle_req(args, ctx):
     except (IndexError, KeyError):
         return err(out=f'<ansired>unknown command:</ansired> {code}')
 
-    print(ex_cmd)
     # if there are args, fill them in
     if len(args) > 1:
         ex_cmd = cmd_w_args(ex_cmd, args[1:])
