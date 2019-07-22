@@ -3,6 +3,7 @@ import logging
 import os
 from os.path import expanduser
 from pathlib import Path
+import string
 import sys
 from textwrap import dedent
 import traceback
@@ -22,6 +23,7 @@ DB_FILE = str(Path(DB_FILE).absolute())
 
 
 log = get_logger(__name__)
+fmt = string.Formatter()
 
 
 class CODE:
@@ -48,6 +50,18 @@ class Command(Model):
     cmd = Column()
     code = Column()
     desc = Column()
+    arg_count = Column()
+    args = Column()
+
+    @classmethod
+    def _fmt_cmd(cls, cmd):
+        scmd = ''
+        for literal_text, field_name, format_spec, conversion in fmt.parse(cmd):
+            if literal_text is not None:
+                scmd += literal_text
+            if field_name is not None:
+                scmd += f'<ansiyellow>{{{field_name}}}</ansiyellow>'
+        return scmd
 
     def __repr__(self):
         return f'<Command(cmd={self.cmd} code={self.code})>'
@@ -56,6 +70,24 @@ class Command(Model):
 class NemSchema(Schema):
     version = __version__
     cmds = Command
+
+    @staticmethod
+    def migrate_to_0_0_3(db, dbname):
+        # 0.0.3 introduces arg_count and args columns on Command
+        print('running migration for 0.0.3')
+        rows = db.query(Command).all(in_dbs=[dbname])
+        for cmd in rows:
+            new_cmd = ''
+            args = []
+            for lit, fn, fs, c in fmt.parse(cmd):
+                if lit:
+                    new_cmd += lit
+                if fn is not None:
+                    # new_cmd += 
+                    pass
+            cmd.args = []
+            cmd.arg_count = len(arg_info)
+        print(db._mutations)
 
 
 def mkresp(out='', code=0, ctx=None):
@@ -68,6 +100,10 @@ def err(**kwargs):
     out = f'<ansired>{kwargs.get("out")}</ansired>'
     kwargs.update(code=CODE.ERR, out=out)
     return mkresp(**kwargs)
+
+
+def nprompt(s):
+    return prompt(HTML(f'{s} > '))
 
 
 def mkcode(cmd, codes):
@@ -110,7 +146,8 @@ class Resource:
             doc += f' <ansiblue>{resname[0]}</ansiblue>{resname[1:]}\n'
             doc += f'  <ansiblue>{attr[0]}</ansiblue>{attr[1:]}:\n'
             if m.__doc__:
-                _doc = '\n    '.join([dedent(d) for d in m.__doc__.split('\n')])
+                _doc = dedent(m.__doc__)
+                _doc = '\n    '.join(_doc.split('\n'))
                 _doc = _doc
             else:
                 _doc = 'TODO'
@@ -160,7 +197,7 @@ class Help(Resource):
 def opt(**_kwargs):
     # Decorator for documenting and validating opts to a resource
     def dec(f):
-        f.__doc__ += f'\n<ansiblue>{_kwargs.get("name")}</ansiblue>: {_kwargs.get("desc")}'
+        f.__doc__ += f'<ansiblue>{_kwargs.get("name")}</ansiblue>: {_kwargs.get("desc")}\n'
         @wraps(f)
         def wrapper(*args, **kwargs):
             return f(*args, **kwargs)
@@ -191,7 +228,9 @@ class NemRes(Resource):
         dbfiles = args
         db.load(dbfiles=dbfiles)
         str_dbfiles = ' '.join(dbfiles)
-        return mkresp(out=f'<ansigreen>successfully created dbfile{s if len(dbfiles) > 1 else ""} "{str_dbfiles}"</ansigreen>')
+        return mkresp(out=f'<ansigreen>successfully created '
+                          f'dbfile{s if len(dbfiles) > 1 else ""} '
+                          f'"{str_dbfiles}"</ansigreen>')
 
 
 class CmdRes(Resource):
@@ -200,15 +239,36 @@ class CmdRes(Resource):
     # @arg_parse parses args for
     def create(self, opts, args, ctx):
         """
-        Creates a command
+        Creates a command.
+
+        Named arguments can be specified in a command like in the following example:
+          git push {remote=origin} {branch=master}
         """
         db = ctx.get('db')
         cmds = db.query(Command).all(in_dbs=[db.closest])
         codes_cmds = { cmd.code: cmd.cmd for cmd in cmds }
-        cmd = ' '.join(args)
-        code = mkcode(cmd, codes_cmds)
-        db.add(Command(cmd=cmd, code=code, desc=''), in_dbs=['closest'])
-        return mkresp(out=f'<ansigreen>added command:</ansigreen> <ansiblue>{code}</ansiblue> = <ansiyellow>{cmd}</ansiyellow><ansigreen> to {db.closest}</ansigreen>')
+        new_cmd = ' '.join(args)
+        new_code = mkcode(new_cmd, codes_cmds)
+        desc = nprompt('command description')
+        arg_info = []
+        for literal_text, field_name, format_spec, conversion in fmt.parse(new_cmd):
+            if field_name is not None:
+                arg_short, arg_default = field_name.split('=')
+                arg_name = nprompt(f'<ansiyellow>{field_name}</ansiyellow> name')
+                arg_desc = nprompt(f'<ansiyellow>{field_name}</ansiyellow> description')
+                arg_info.append((arg_short, arg_name, arg_default, arg_desc))
+
+        db.add(Command(
+            cmd=new_cmd,
+            code=new_code,
+            desc=desc,
+            arg_count=len(arg_info),
+            args=arg_info,
+        ), in_dbs=[db.closest])
+        return mkresp(out=f'<ansigreen>added command:</ansigreen> '
+                          f'{Command._fmt_cmd(new_cmd)} '
+                          f'<ansiblue>[{new_code}]</ansiblue> = '
+                          f'<ansigreen>to {db.closest}</ansigreen>')
 
     # @arg(name='code', position='0', desc='code of the command to document')
     # @arg(name='documentation', position='1', desc='the documentation to give the command')
@@ -225,12 +285,21 @@ class CmdRes(Resource):
         db = ctx.get('db')
         code = args[0]
         new_code = args[1]
+
+        # check if the new code already exists and err out if it does
+        try:
+            cmd = db.query(Command).filter_by(code=new_code).one()
+        except NoResultFound:
+            pass
+        else:
+            return err(out=f'code <ansiblue>{new_code}</ansiblue> already exists')
+
         try:
             cmd = db.query(Command).filter_by(code=code).one()
             cmd.code = new_code
             return mkresp(out=f'<ansigreen>command <ansiyellow>{cmd.cmd}</ansiyellow> code updated <ansired>{code}</ansired> -> <ansiblue>{new_code}</ansiblue></ansigreen>')
         except NoResultFound:
-            return err(out=f'<ansired>code <ansiblue>{code}</ansiblue> not found</ansired>')
+            return err(out=f'code <ansiblue>{code}</ansiblue> not found')
 
     # @arg(name='query', position='*', desc='what to search for')
     def find(self, opts, args, ctx):
@@ -242,7 +311,7 @@ class CmdRes(Resource):
         searchstr = ' '.join(args)
 
         def _matches(cmd, query):
-            if query in cmd['cmd']:
+            if query in cmd['cmd'] or query in cmd['code']:
                 return True
             return False
         matches = [[cmd['cmd'], f'[{code}]', cmd['desc']] for code, cmd in codes.items() if _matches(cmd, searchstr)]
@@ -334,7 +403,7 @@ class Resources:
 
 def cmd_w_args(cmd, args):
     kwargs = {
-        f'arg{i+1}': arg for i, arg in enumerate(args)
+        f'{i+1}': arg for i, arg in enumerate(args)
     }
     return cmd.format(**kwargs)
 
@@ -389,6 +458,7 @@ def resolve_codes(db):
         row_code = row['code']
         if row_code not in codes:
             codes[row_code] = dict(
+                code=row_code,
                 dbs=[dbname],
                 cmd=row['cmd'],
                 desc=row['desc'],
@@ -403,6 +473,7 @@ def resolve_codes(db):
             while code not in codes:
                 code = f'{code}{i}'
             codes[code] = dict(
+                code=code,
                 dbs=[dbname],
                 cmd=row['cmd'],
                 desc=row['desc'],
@@ -434,7 +505,7 @@ def nem():
         if code == CODE.EXEC:
             os.system(ctx['cmd'])
 
-        db.commit()
+        db.commit() # to_file=True
 
         sys.exit(1 if was_err else 0)
     except DbError:

@@ -2,17 +2,16 @@
 plain-text db
 
 TODO
-- versions
-- migrations
+- versioning/migrations
 - basic caching
 - async commits
 - tests lol
 - unique constraints
 """
 from collections import OrderedDict
+from distutils.version import StrictVersion
 import logging
 import os
-# from packaging import version
 
 from .log import get_logger
 
@@ -33,6 +32,21 @@ class Schema:
     @classmethod
     def attrs(cls):
         return [attr for attr in cls.__dict__ if not attr.startswith('_')]
+
+    @classmethod
+    def migrations(cls):
+        return [attr for attr in cls.attrs() if attr.startswith('migrate_to_')]
+
+    @classmethod
+    def migrations_past(cls, version):
+        ms = []
+        for migration_name in cls.migrations():
+            migration_ver = migration_name.replace('migrate_to_', '')
+            migration_ver = StrictVersion(migration_ver.replace('_', '.'))
+            if migration_ver > version:
+                ms.append((migration_ver, getattr(cls, migration_name)))
+        ms = sorted(ms, key=lambda x: x[0])
+        return ms
 
     @classmethod
     def tablenames(cls):
@@ -72,10 +86,10 @@ class Model:
             return object.__setattr__(self, name, value)
 
         attrs = object.__getattribute__(self, '_fields')
-        if attrs and name in attrs:
+        if (attrs and name in attrs) or (name in self.attrs()):
             return self._set_field(name, value)
         else:
-            return object.__setattribute__(self, name, value)
+            return object.__setattr__(self, name, value)
 
     def _field_access(self, name):
         return self._fields[name]
@@ -185,7 +199,7 @@ class Db:
 
     @property
     def rows(self):
-        # generator for all rows in all database.. yikes
+        # generator for all rows in all databases.. yikes
         for dbfile, db in self._dbs.items():
             for tablename, table in db['__table__'].items():
                 for row in table:
@@ -194,7 +208,7 @@ class Db:
 
     def empty_db(self):
         return {
-            'version': self.schema.version,
+            '__version__': self.schema.version,
             '__table__': {
                 tablename: [] for tablename in self.schema.tablenames()
             },
@@ -227,6 +241,21 @@ class Db:
             raw_db = self.lib.loads(raw)
             self._dbs[dbfile] = raw_db
 
+        for dbname, db in self._dbs.items():
+            if '__version__' not in db:
+                raise DbError(f'Malformed dbfile {dbname} - missing __version__ '
+                               '(it might be version because of an earlier bug)')
+
+            db_version = StrictVersion(db['__version__'])
+            schema_version = StrictVersion(self.schema.version)
+
+            if db_version < schema_version:
+                self._migrate_db(dbname, db, db_version, schema_version)
+
+    def _migrate_db(self, dbname, db, db_version, schema_version):
+        for version, migration in self.schema.migrations_past(db_version):
+            migration(self, dbname)
+
     def _add_mutation(self, _id, field, value):
         if _id not in self._mutations:
             self._mutations[_id] = []
@@ -241,13 +270,19 @@ class Db:
         }
         return Cursor(self, model, tables)
 
-    def commit(self):
+    def commit(self, to_file=False):
         # apply mutations
         for row in self.rows:
             row_id = id(row)
             if row_id in self._mutations:
                 for field, value in self._mutations[row_id]:
                     row[field] = value
+
+        for row in self.rows:
+            print(row)
+
+        if not to_file:
+            return
 
         # persist to file
         for dbname, db in self._dbs.items():
@@ -276,11 +311,7 @@ class Db:
 
         in_dbs = in_dbs or set(self._dbtables.keys())
         for dbname, db in self._dbs.items():
-            # if 'closest' is provided, then match with the 'closest'
-            # (directory-wise) dbfile.
-            if 'closest' in in_dbs and self.isclosest(dbname):
-                db['__table__'][tablename].append(raw_row)
-            elif dbname in in_dbs:
+            if dbname in in_dbs:
                 db['__table__'][tablename].append(raw_row)
 
     def delete(self, inst, in_dbs=None):
