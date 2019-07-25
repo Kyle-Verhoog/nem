@@ -17,11 +17,6 @@ code = "pip"
 desc = ""
 
 [[__table__.cmds]]
-cmd = "git diff"
-code = "gd"
-desc = ""
-
-[[__table__.cmds]]
 cmd = "python -m unittest discover tests/"
 code = "ptest"
 desc = ""

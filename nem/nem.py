@@ -85,7 +85,16 @@ def mkcode(cmd, codes):
                 l = l[1:]
         return ''
 
-    code = ''.join([_pick_letter(s) for s in str(cmd).split(' ')])
+    cmd_pieces = str(cmd).split(' ')
+    code = ''
+    if len(cmd_pieces) > 1 and cmd_pieces[0] in ['n', 'nem']:
+        if len(cmd_pieces) > 2:
+            code = cmd_pieces[1]
+            cmd_pieces = cmd_pieces[2:]
+        else:
+            cmd_pieces = cmd_pieces[1:]
+
+    code += ''.join([_pick_letter(s) for s in cmd_pieces])
     while code in codes:
         code += 'f'
     return code
@@ -361,9 +370,11 @@ def handle_req(args, ctx):
     except (IndexError, KeyError):
         return err(out=f'<ansired>unknown command:</ansired> {code}')
 
+
     # if there are args, fill them in
     if len(args) > 1:
-        ex_cmd = cmd_w_args(ex_cmd, args[1:])
+        ex_cmd = f'{ex_cmd} {" ".join(args[1:])}'
+        # ex_cmd = cmd_w_args(ex_cmd, args[1:])
     return mkresp(out=f'<ansigreen>exec:</ansigreen> {ex_cmd}', code=CODE.EXEC, ctx={'cmd': ex_cmd})
 
 
