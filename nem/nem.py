@@ -373,7 +373,10 @@ def handle_req(args, ctx):
 
     # if there are args, fill them in
     if len(args) > 1:
-        ex_cmd = f'{ex_cmd} {" ".join(args[1:])}'
+        # quote all args
+        _args = ' '.join(list(map(lambda x: f'"{x}"', args[1:])))
+        # _args = ' '.join(args[1:])
+        ex_cmd = f'{ex_cmd} {_args}'
         # ex_cmd = cmd_w_args(ex_cmd, args[1:])
     return mkresp(out=f'<ansigreen>exec:</ansigreen> {ex_cmd}', code=CODE.EXEC, ctx={'cmd': ex_cmd})
 
