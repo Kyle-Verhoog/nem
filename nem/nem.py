@@ -364,21 +364,34 @@ def handle_req(args, ctx):
     # as a code
     code = args[0]
 
+
     try:
         codes = resolve_codes(db)
         ex_cmd = codes[code]['cmd']
     except (IndexError, KeyError):
         return err(out=f'<ansired>unknown command:</ansired> {code}')
 
+    # short-cut recursive call for performance
+    try:
+        if len(args) < 2:
+            raise IndexError
+
+        scmd = ex_cmd.split(' ')
+        if scmd[0] == 'n' and scmd[1] in codes:
+            scmd += list(map(lambda x: f'"{x}"', args[1:]))
+            log.info(f'recursing on {scmd}')
+            return nem(scmd)
+    except IndexError:
+        pass
+
 
     # if there are args, fill them in
     if len(args) > 1:
         # quote all args
         _args = ' '.join(list(map(lambda x: f'"{x}"', args[1:])))
-        # _args = ' '.join(args[1:])
         ex_cmd = f'{ex_cmd} {_args}'
-        # ex_cmd = cmd_w_args(ex_cmd, args[1:])
-    return mkresp(out=f'<ansigreen>exec:</ansigreen> {ex_cmd}', code=CODE.EXEC, ctx={'cmd': ex_cmd})
+    log.info(f'exec {ex_cmd}')
+    return mkresp(out='', code=CODE.EXEC, ctx={'cmd': ex_cmd})
 
 
 def gather_dbfiles():
@@ -424,7 +437,8 @@ def resolve_codes(db):
     return codes
 
 
-def nem():
+def nem(argv=None):
+    argv = argv if argv is not None else sys.argv
     try:
         dbs = gather_dbfiles()
 
@@ -439,11 +453,12 @@ def nem():
             'pwd': os.environ.get('PWD'),
             'db': db,
         }
-        args = sys.argv[1:]
+        args = argv[1:]
         (out, code, ctx) = handle_req(args, ctx)
 
         was_err = code == CODE.ERR
-        print(HTML(out), file=sys.stderr if was_err else sys.stdout)
+        if out:
+            print(HTML(out), file=sys.stderr if was_err else sys.stdout)
 
         if code == CODE.EXEC:
             os.system(ctx['cmd'])
