@@ -1,0 +1,13 @@
+[package]
+name = "nem"
+version = "0.1.0"
+authors = ["kyle-verhoog <kyle@verhoog.ca>"]
+edition = "2018"
+
+[dependencies]
+toml = "^0.4"
+serde = { version = "^1.0", features = ["derive"]}
+
+[[bin]]
+name = "n"
+path = "nem.rs"

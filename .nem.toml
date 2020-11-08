@@ -1,29 +1,26 @@
-__version__ = "0.0.0"
+version = "0.0"
 
-[__table__]
-[[__table__.cmds]]
-cmd = "virtualenv --python=python3 .env/"
-code = "mkvenv"
+[[cmds]]
+cmd = "cargo check"
+code = "cc"
 desc = ""
 
-[[__table__.cmds]]
-cmd = "source .env/bin/activate.fish"
-code = "actfish"
+[[cmds]]
+cmd = "cargo run"
+code = "cr"
 desc = ""
 
-[[__table__.cmds]]
-cmd = "pip install -r requirements.txt"
-code = "pip"
+[[cmds]]
+cmd = "ls -lah"
+code = "ls"
 desc = ""
 
-[[__table__.cmds]]
-cmd = "python -m unittest discover tests/"
-code = "ptest"
+[[cmds]]
+cmd = "cargo fmt"
+code = "fmt"
 desc = ""
 
-[[__table__.cmds]]
-cmd = "env CI=true python -m unittest discover tests/"
-code = "ptestci"
+[[cmds]]
+cmd = "git status"
+code = "gs"
 desc = ""
-
-
