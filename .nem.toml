@@ -1,8 +1,18 @@
 version = "0.0"
 
 [[cmds]]
+cmd = "cargo build --release"
+code = "cbr"
+desc = ""
+
+[[cmds]]
 cmd = "cargo check"
 code = "cc"
+desc = ""
+
+[[cmds]]
+cmd = "cargo fmt"
+code = "fmt"
 desc = ""
 
 [[cmds]]
@@ -16,23 +26,13 @@ code = "ct"
 desc = ""
 
 [[cmds]]
-cmd = "ls -lah"
-code = "ls"
+cmd = "clear"
+code = "c"
 desc = ""
 
 [[cmds]]
-cmd = "cargo fmt"
-code = "fmt"
-desc = ""
-
-[[cmds]]
-cmd = "cargo build --release"
-code = "cbr"
-desc = ""
-
-[[cmds]]
-cmd = "git status"
-code = "gs"
+cmd = "git add -u"
+code = "gau"
 desc = ""
 
 [[cmds]]
@@ -41,13 +41,8 @@ code = "gc"
 desc = ""
 
 [[cmds]]
-cmd = "git log"
-code = "gl"
-desc = ""
-
-[[cmds]]
-cmd = "clear"
-code = "c"
+cmd = "git commit --amend"
+code = "gca"
 desc = ""
 
 [[cmds]]
@@ -61,11 +56,16 @@ code = "gds"
 desc = ""
 
 [[cmds]]
-cmd = "git add -u"
-code = "gau"
+cmd = "git log"
+code = "gl"
 desc = ""
 
 [[cmds]]
-cmd = "git commit --amend"
-code = "gca"
+cmd = "git status"
+code = "gs"
+desc = ""
+
+[[cmds]]
+cmd = "ls -lah"
+code = "ls"
 desc = ""
