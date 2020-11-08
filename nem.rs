@@ -86,7 +86,7 @@ fn main() {
         _ => {
             let cmd: Vec<&str> = match nem_file.cmds.iter().find(|&c| c.code == args[1]) {
                 Some(cmd) => cmd.cmd.split(" ").collect(),
-                None => vec![&args[0], "/h"],
+                None => vec![&args[0], "/cl"],
             };
             let exec = process::Command::new("sh")
                 .arg("-c")

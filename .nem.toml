@@ -11,6 +11,11 @@ code = "cr"
 desc = ""
 
 [[cmds]]
+cmd = "cargo test"
+code = "ct"
+desc = ""
+
+[[cmds]]
 cmd = "ls -lah"
 code = "ls"
 desc = ""
@@ -21,6 +26,46 @@ code = "fmt"
 desc = ""
 
 [[cmds]]
+cmd = "cargo build --release"
+code = "cbr"
+desc = ""
+
+[[cmds]]
 cmd = "git status"
 code = "gs"
+desc = ""
+
+[[cmds]]
+cmd = "git commit"
+code = "gc"
+desc = ""
+
+[[cmds]]
+cmd = "git log"
+code = "gl"
+desc = ""
+
+[[cmds]]
+cmd = "clear"
+code = "c"
+desc = ""
+
+[[cmds]]
+cmd = "git diff"
+code = "gd"
+desc = ""
+
+[[cmds]]
+cmd = "git diff --staged"
+code = "gds"
+desc = ""
+
+[[cmds]]
+cmd = "git add -u"
+code = "gau"
+desc = ""
+
+[[cmds]]
+cmd = "git commit --amend"
+code = "gca"
 desc = ""
