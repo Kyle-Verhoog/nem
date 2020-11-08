@@ -178,11 +178,3 @@ fn main() {
     nem_file.sort();
     nem_file.write_to_file()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn no_commands() {}
-}

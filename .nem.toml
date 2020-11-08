@@ -11,7 +11,7 @@ code = "cc"
 desc = ""
 
 [[cmds]]
-cmd = "cargo fmt"
+cmd = "cargo fmt --all"
 code = "fmt"
 desc = ""
 
