@@ -182,9 +182,7 @@ impl Dir {
     ///   can simply pass it again to override it.
     pub fn command(&self) -> TestCommand {
         let mut cmd = self.bin();
-        cmd.env_remove("RIPGREP_CONFIG_PATH");
         cmd.current_dir(&self.dir);
-        cmd.arg("--path-separator").arg("/");
         TestCommand {
             dir: self.clone(),
             cmd: cmd,
@@ -448,5 +446,32 @@ desc = ""
         );
         let expected = "cbr\tcargo build --release\n";
         assert_eq!(expected, cmd.arg("/cl").stdout());
+    });
+
+    nemtest!(create_command, |dir: Dir, mut cmd: TestCommand| {
+        dir.create(
+            ".nem.toml",
+            r#"
+version = "0.0"
+cmds = []
+"#,
+        );
+        assert_eq!("", cmd.args(vec!["/cc", "echo"]).stdout());
+    });
+
+    nemtest!(cmd_args, |dir: Dir, mut cmd: TestCommand| {
+        dir.create(
+            ".nem.toml",
+            r#"
+version = "0.0"
+
+[[cmds]]
+cmd = "echo"
+code = "e"
+desc = ""
+"#,
+        );
+        let expected = "hello\n";
+        assert_eq!(expected, cmd.args(vec!["e", "hello"]).stdout());
     });
 }
