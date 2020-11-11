@@ -148,10 +148,9 @@ fn main() {
                 .expect("Couldn't convert to string.")
                 .trim();
 
-            let cmd_args = &cmd[1..cmd.len()];
-            let arg_args: Vec<_> = args[2..args.len()].iter().map(|s| s.as_str()).collect();
             let _ = process::Command::new(&location)
-                .args(cmd_args.iter().chain(arg_args.iter()))
+                .args(&cmd[1..])
+                .args(&args[2..])
                 .spawn()
                 .expect("failed to execute command")
                 .wait();
