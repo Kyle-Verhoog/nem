@@ -28,13 +28,10 @@ impl NemFile {
     }
 
     fn rm_entry(&mut self, code: &String) -> Option<Entry> {
-        match self.entries.iter().position(|c| c.code == *code) {
-            Some(index) => {
-                let entry = self.entries.remove(index);
-                Some(entry)
-            }
-            None => None,
-        }
+        self.entries
+            .iter()
+            .position(|c| c.code == *code)
+            .map(|index| self.entries.remove(index))
     }
 
     fn find_entry_by_code(&self, code: &String) -> Option<&Entry> {
@@ -46,13 +43,10 @@ impl NemFile {
     }
 
     fn edit_code(&mut self, old_code: &String, new_code: &String) -> Option<&Entry> {
-        match self.find_entry_by_code_mut(old_code) {
-            Some(entry) => {
-                entry.code = new_code.clone();
-                Some(entry)
-            }
-            None => None,
-        }
+        self.find_entry_by_code_mut(old_code).map(|entry| {
+            entry.code = new_code.clone();
+            &*entry
+        })
     }
 
     fn write_to_file(&self) {
@@ -68,18 +62,12 @@ struct Entry {
     desc: String,
 }
 
-fn mnemonic(v: Vec<String>, existing: Vec<&String>) -> String {
-    let mut n = String::from("");
-
-    for w in v.iter() {
-        for c in w.chars() {
-            if c == '-' {
-                continue;
-            }
-            n.push(c);
-            break;
-        }
-    }
+fn mnemonic(v: &[String], existing: Vec<&String>) -> String {
+    let mut n = v
+        .iter()
+        .flat_map(|s| s.chars())
+        .filter(|c| *c != '-')
+        .collect();
 
     while existing.iter().any(|s| **s == n) {
         n = n + "1";
@@ -88,7 +76,7 @@ fn mnemonic(v: Vec<String>, existing: Vec<&String>) -> String {
 }
 
 fn main() {
-    let mut args: Vec<String> = env::args().collect();
+    let mut args: Vec<_> = env::args().collect();
     let contents = fs::read_to_string(".nem.toml").expect("Couldn't open file.");
     let mut nem_file: NemFile = toml::from_str(&contents).expect("Couldn't parse toml file");
     nem_file.file_name = String::from(".nem.toml");
@@ -101,10 +89,10 @@ fn main() {
     match args[1].as_str() {
         "/cc" => {
             if args.len() < 3 {
-                println!("please specify a command to create");
+                eprintln!("please specify a command to create");
                 process::exit(1);
             }
-            let nem = mnemonic(args[2..].to_vec(), nem_file.codes());
+            let nem = mnemonic(&args[2..], nem_file.codes());
             nem_file.add_entry(Entry {
                 cmd: args[2..].join(" "),
                 code: nem,
@@ -113,51 +101,45 @@ fn main() {
         }
         "/ce" => {
             if args.len() != 4 {
-                println!("unexpected arguments. expected <existing code> <replacement code>");
+                eprintln!("unexpected arguments. expected <existing code> <replacement code>");
                 process::exit(1);
             }
-            match nem_file.find_entry_by_code(&args[3]) {
-                Some(entry) => {
-                    println!(
-                        "collision: code '{}' already exists for `{}`",
-                        &args[3], entry.cmd
-                    );
-                    process::exit(1);
-                }
-                None => {
-                    let entry = nem_file.edit_code(&args[2], &args[3]).unwrap();
-                    println!(
-                        "edited code for `{}` from '{}' to '{}'",
-                        &entry.cmd, &args[2], &entry.code
-                    );
-                }
+            if let Some(entry) = nem_file.find_entry_by_code(&args[3]) {
+                eprintln!(
+                    "collision: code '{}' already exists for `{}`",
+                    &args[3], entry.cmd
+                );
+                process::exit(1);
+            } else {
+                let entry = nem_file.edit_code(&args[2], &args[3]).unwrap();
+                println!(
+                    "edited code for `{}` from '{}' to '{}'",
+                    &entry.cmd, &args[2], &entry.code
+                );
             }
         }
         "/cl" => {
-            for entry in nem_file.entries.iter() {
+            for entry in &nem_file.entries {
                 println!("{}\t{}", entry.code, entry.cmd);
             }
         }
         "/cr" => {
             if args.len() != 3 {
-                println!("unexpected number of arguments. expected <code to remove>");
+                eprintln!("unexpected number of arguments. expected <code to remove>");
                 process::exit(1);
             }
-            match nem_file.rm_entry(&args[2]) {
-                Some(entry) => {
-                    println!("removed command `{}` for code '{}'", entry.cmd, &args[2]);
-                }
-                None => {
-                    println!("no command for code '{}' found", &args[2]);
-                    process::exit(1);
-                }
+            if let Some(entry) = nem_file.rm_entry(&args[2]) {
+                println!("removed command `{}` for code '{}'", entry.cmd, &args[2]);
+            } else {
+                eprintln!("no command for code '{}' found", &args[2]);
+                process::exit(1);
             }
         }
         _ => {
-            let cmd: Vec<&str> = match nem_file.find_entry_by_code(&args[1]) {
-                Some(cmd) => cmd.cmd.split(" ").collect(),
-                None => vec![&args[0], "/cl"],
-            };
+            let cmd = nem_file
+                .find_entry_by_code(&args[1])
+                .map(|cmd| cmd.cmd.split(" ").collect::<Vec<&str>>())
+                .unwrap_or_else(|| vec![&args[0], "/cl"]);
             let exec = process::Command::new("sh")
                 .arg("-c")
                 .arg(format!("which {}", cmd[0]))
@@ -167,8 +149,8 @@ fn main() {
                 .expect("Couldn't convert to string.")
                 .trim();
 
-            let cmd_args: Vec<&str> = cmd[1..cmd.len()].to_vec();
-            let arg_args: Vec<&str> = args[2..args.len()].iter().map(|s| s.as_str()).collect();
+            let cmd_args = &cmd[1..cmd.len()];
+            let arg_args: Vec<_> = args[2..args.len()].iter().map(|s| s.as_str()).collect();
             let _ = process::Command::new(&location)
                 .args(cmd_args.iter().chain(arg_args.iter()))
                 .spawn()
