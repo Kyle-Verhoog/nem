@@ -1,29 +1,71 @@
-__version__ = "0.0.0"
+version = "0.0"
 
-[__table__]
-[[__table__.cmds]]
-cmd = "virtualenv --python=python3 .env/"
-code = "mkvenv"
+[[cmds]]
+cmd = "cargo build --release"
+code = "cbr"
 desc = ""
 
-[[__table__.cmds]]
-cmd = "source .env/bin/activate.fish"
-code = "actfish"
+[[cmds]]
+cmd = "cargo check"
+code = "cc"
 desc = ""
 
-[[__table__.cmds]]
-cmd = "pip install -r requirements.txt"
-code = "pip"
+[[cmds]]
+cmd = "cargo fmt --all"
+code = "fmt"
 desc = ""
 
-[[__table__.cmds]]
-cmd = "python -m unittest discover tests/"
-code = "ptest"
+[[cmds]]
+cmd = "cargo run"
+code = "cr"
 desc = ""
 
-[[__table__.cmds]]
-cmd = "env CI=true python -m unittest discover tests/"
-code = "ptestci"
+[[cmds]]
+cmd = "cargo test"
+code = "ct"
 desc = ""
 
+[[cmds]]
+cmd = "clear"
+code = "c"
+desc = ""
 
+[[cmds]]
+cmd = "git add -u"
+code = "gau"
+desc = ""
+
+[[cmds]]
+cmd = "git commit"
+code = "gc"
+desc = ""
+
+[[cmds]]
+cmd = "git commit --amend"
+code = "gca"
+desc = ""
+
+[[cmds]]
+cmd = "git diff"
+code = "gd"
+desc = ""
+
+[[cmds]]
+cmd = "git diff --staged"
+code = "gds"
+desc = ""
+
+[[cmds]]
+cmd = "git log"
+code = "gl"
+desc = ""
+
+[[cmds]]
+cmd = "git status"
+code = "gs"
+desc = ""
+
+[[cmds]]
+cmd = "ls -lah"
+code = "ls"
+desc = ""
