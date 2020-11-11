@@ -65,8 +65,7 @@ struct Entry {
 fn mnemonic(v: &[String], existing: Vec<&String>) -> String {
     let mut n = v
         .iter()
-        .flat_map(|s| s.chars())
-        .filter(|c| *c != '-')
+        .filter_map(|w| w.chars().filter(|c| *c != '-').next())
         .collect();
 
     while existing.iter().any(|s| **s == n) {
