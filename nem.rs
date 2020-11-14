@@ -62,6 +62,59 @@ struct Entry {
     desc: String,
 }
 
+#[derive(Debug)]
+struct NemFiles {
+    nem_files: Vec<NemFile>,
+}
+
+impl NemFiles {
+    fn cur_nem_file_mut(&mut self) -> &mut NemFile {
+        &mut self.nem_files[0]
+    }
+
+    fn codes(&self) -> Vec<&String> {
+        self.nem_files.iter().flat_map(NemFile::codes).collect()
+    }
+
+    fn sort(&mut self) {
+        for nem_file in &mut self.nem_files {
+            nem_file.sort();
+        }
+    }
+
+    fn add_entry(&mut self, entry: Entry) {
+        let nem_file = self.cur_nem_file_mut();
+        nem_file.add_entry(entry);
+    }
+
+    fn rm_entry(&mut self, code: &String) -> Option<Entry> {
+        self.nem_files
+            .iter_mut()
+            .find(|nf| nf.find_entry_by_code(code).is_some())
+            .and_then(|nf| nf.rm_entry(code))
+    }
+
+    fn find_entry_by_code(&self, code: &String) -> Option<&Entry> {
+        self.nem_files
+            .iter()
+            .filter_map(|nf| nf.find_entry_by_code(code))
+            .next()
+    }
+
+    fn edit_code(&mut self, old_code: &String, new_code: &String) -> Option<&Entry> {
+        self.nem_files
+            .iter_mut()
+            .find(|nf| nf.find_entry_by_code(old_code).is_some())
+            .and_then(|nf| nf.edit_code(old_code, new_code))
+    }
+
+    fn write(&mut self) {
+        for nem_file in &self.nem_files {
+            nem_file.write_to_file()
+        }
+    }
+}
+
 fn mnemonic(v: &[String], existing: Vec<&String>) -> String {
     let mut n = v
         .iter()
@@ -76,10 +129,33 @@ fn mnemonic(v: &[String], existing: Vec<&String>) -> String {
 
 fn main() {
     let mut args: Vec<_> = env::args().collect();
-    let contents = fs::read_to_string(".nem.toml").expect("Couldn't open file.");
-    let mut nem_file: NemFile = toml::from_str(&contents).expect("Couldn't parse toml file");
-    nem_file.file_name = String::from(".nem.toml");
-    nem_file.sort();
+
+    let mut nem_files = NemFiles {
+        nem_files: Vec::new(),
+    };
+    let mut path_buf = env::current_dir().expect("Couldn't get CWD");
+    loop {
+        path_buf.push(".nem.toml");
+        if path_buf.exists() {
+            match fs::read_to_string(&path_buf) {
+                Ok(contents) => {
+                    let mut nem_file: NemFile =
+                        toml::from_str(&contents).expect("Couldn't parse toml file");
+                    nem_file.file_name = String::from(path_buf.to_str().unwrap());
+                    nem_file.sort();
+                    nem_files.nem_files.push(nem_file);
+                }
+                Err(err) => {
+                    eprintln!("{}", err);
+                }
+            }
+        }
+        path_buf.pop();
+
+        if !path_buf.pop() {
+            break;
+        }
+    }
 
     if args.len() < 2 {
         args.push("/cl".to_string());
@@ -91,8 +167,8 @@ fn main() {
                 eprintln!("please specify a command to create");
                 process::exit(1);
             }
-            let nem = mnemonic(&args[2..], nem_file.codes());
-            nem_file.add_entry(Entry {
+            let nem = mnemonic(&args[2..], nem_files.codes());
+            nem_files.add_entry(Entry {
                 cmd: args[2..].join(" "),
                 code: nem,
                 desc: "".to_string(),
@@ -103,14 +179,14 @@ fn main() {
                 eprintln!("unexpected arguments. expected <existing code> <replacement code>");
                 process::exit(1);
             }
-            if let Some(entry) = nem_file.find_entry_by_code(&args[3]) {
+            if let Some(entry) = nem_files.find_entry_by_code(&args[3]) {
                 eprintln!(
                     "collision: code '{}' already exists for `{}`",
                     &args[3], entry.cmd
                 );
                 process::exit(1);
             } else {
-                let entry = nem_file.edit_code(&args[2], &args[3]).unwrap();
+                let entry = nem_files.edit_code(&args[2], &args[3]).unwrap();
                 println!(
                     "edited code for `{}` from '{}' to '{}'",
                     &entry.cmd, &args[2], &entry.code
@@ -118,8 +194,11 @@ fn main() {
             }
         }
         "/cl" => {
-            for entry in &nem_file.entries {
-                println!("{}\t{}", entry.code, entry.cmd);
+            for nem_file in nem_files.nem_files.iter().rev() {
+                println!("file: {}", &nem_file.file_name);
+                for entry in &nem_file.entries {
+                    println!("{}\t{}", entry.code, entry.cmd);
+                }
             }
         }
         "/cr" => {
@@ -127,7 +206,7 @@ fn main() {
                 eprintln!("unexpected number of arguments. expected <code to remove>");
                 process::exit(1);
             }
-            if let Some(entry) = nem_file.rm_entry(&args[2]) {
+            if let Some(entry) = nem_files.rm_entry(&args[2]) {
                 println!("removed command `{}` for code '{}'", entry.cmd, &args[2]);
             } else {
                 eprintln!("no command for code '{}' found", &args[2]);
@@ -135,7 +214,7 @@ fn main() {
             }
         }
         _ => {
-            let cmd = nem_file
+            let cmd = nem_files
                 .find_entry_by_code(&args[1])
                 .map(|cmd| cmd.cmd.split(" ").collect::<Vec<&str>>())
                 .unwrap_or_else(|| vec![&args[0], "/cl"]);
@@ -156,6 +235,6 @@ fn main() {
                 .wait();
         }
     }
-    nem_file.sort();
-    nem_file.write_to_file()
+    nem_files.sort();
+    nem_files.write()
 }
