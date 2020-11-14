@@ -173,13 +173,6 @@ impl Dir {
 
     /// Creates a new command that is set to use the ripgrep executable in
     /// this working directory.
-    ///
-    /// This also:
-    ///
-    /// * Unsets the `RIPGREP_CONFIG_PATH` environment variable.
-    /// * Sets the `--path-separator` to `/` so that paths have the same output
-    ///   on all systems. Tests that need to check `--path-separator` itself
-    ///   can simply pass it again to override it.
     pub fn command(&self) -> TestCommand {
         let mut cmd = self.bin();
         cmd.current_dir(&self.dir);
@@ -427,9 +420,8 @@ impl TestCommand {
 mod tests {
     use super::*;
 
-    // nemltest!(no_nem_file, |dir: Dir, mut cmd: TestCommand| {
-    //    let expected = "";
-    //    assert_eq!(expected, cmd.arg("/cl").stdout());
+    // nemtest!(no_nem_file, |dir: Dir, mut cmd: TestCommand| {
+    //    assert_eq!("", cmd.arg("/cl").stdout());
     // });
 
     nemtest!(list, |dir: Dir, mut cmd: TestCommand| {
@@ -444,7 +436,10 @@ code = "cbr"
 desc = ""
 "#,
         );
-        let expected = "cbr\tcargo build --release\n";
+        let expected = format!(
+            "file: {}\ncbr\tcargo build --release\n",
+            dir.path().join(".nem.toml").to_str().unwrap()
+        );
         assert_eq!(expected, cmd.arg("/cl").stdout());
     });
 
@@ -473,5 +468,38 @@ desc = ""
         );
         let expected = "hello\n";
         assert_eq!(expected, cmd.args(vec!["e", "hello"]).stdout());
+    });
+
+    nemtest!(multi_cmd_find, |dir: Dir, mut cmd: TestCommand| {
+        dir.create_dir("prj");
+        dir.create(
+            ".nem.toml",
+            r#"
+version = "0.0"
+
+[[cmds]]
+cmd = "echo root"
+code = "e"
+desc = ""
+"#,
+        );
+        cmd.arg("e");
+        assert_eq!("root\n", cmd.stdout());
+        cmd.current_dir(dir.path().join("prj"));
+        assert_eq!("root\n", cmd.stdout());
+
+        dir.create(
+            "prj/.nem.toml",
+            r#"
+version = "0.0"
+
+[[cmds]]
+cmd = "echo prj"
+code = "e"
+desc = ""
+"#,
+        );
+        cmd.current_dir(dir.path().join("prj"));
+        assert_eq!("prj\n", cmd.stdout());
     });
 }
