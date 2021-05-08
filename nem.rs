@@ -197,7 +197,7 @@ fn main() {
             for nem_file in nem_files.nem_files.iter().rev() {
                 println!("file: {}", &nem_file.file_name);
                 for entry in &nem_file.entries {
-                    println!("{}\t{}", entry.code, entry.cmd);
+                    println!("\t{}\t{}", entry.code, entry.cmd);
                 }
             }
         }

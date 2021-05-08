@@ -437,7 +437,7 @@ desc = ""
 "#,
         );
         let expected = format!(
-            "file: {}\ncbr\tcargo build --release\n",
+            "file: {}\n\tcbr\tcargo build --release\n",
             dir.path().join(".nem.toml").to_str().unwrap()
         );
         assert_eq!(expected, cmd.arg("/cl").stdout());
