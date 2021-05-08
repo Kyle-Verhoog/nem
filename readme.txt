@@ -2,7 +2,8 @@ m(nem)onic
 
 usage:
 
-  n /cc git add -u
+  n /command-create git add -u
   n gau
-  n /ce gau ga
+
+  n /command-edit gau ga
   n ga

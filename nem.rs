@@ -162,7 +162,7 @@ fn main() {
     }
 
     match args[1].as_str() {
-        "/cc" => {
+        "/cc" | "/command-create" => {
             if args.len() < 3 {
                 eprintln!("please specify a command to create");
                 process::exit(1);
@@ -174,7 +174,7 @@ fn main() {
                 desc: "".to_string(),
             });
         }
-        "/ce" => {
+        "/ce" | "/command-edit" => {
             if args.len() != 4 {
                 eprintln!("unexpected arguments. expected <existing code> <replacement code>");
                 process::exit(1);
@@ -193,7 +193,7 @@ fn main() {
                 );
             }
         }
-        "/cl" => {
+        "/cl" | "/command-list" => {
             for nem_file in nem_files.nem_files.iter().rev() {
                 println!("file: {}", &nem_file.file_name);
                 for entry in &nem_file.entries {
@@ -201,7 +201,7 @@ fn main() {
                 }
             }
         }
-        "/cr" => {
+        "/cr" | "/command-remove" => {
             if args.len() != 3 {
                 eprintln!("unexpected number of arguments. expected <code to remove>");
                 process::exit(1);
