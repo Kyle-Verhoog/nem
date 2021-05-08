@@ -51,7 +51,7 @@ impl NemFile {
 
     fn write_to_file(&self) {
         let s = toml::to_string(&self).unwrap();
-        fs::write(&self.file_name, s).expect("Unable to write to file");
+        fs::write(&self.file_name, s).expect("unable to write to file");
     }
 }
 
@@ -133,14 +133,14 @@ fn main() {
     let mut nem_files = NemFiles {
         nem_files: Vec::new(),
     };
-    let mut path_buf = env::current_dir().expect("Couldn't get CWD");
+    let mut path_buf = env::current_dir().expect("couldn't get CWD");
     loop {
         path_buf.push(".nem.toml");
         if path_buf.exists() {
             match fs::read_to_string(&path_buf) {
                 Ok(contents) => {
                     let mut nem_file: NemFile =
-                        toml::from_str(&contents).expect("Couldn't parse toml file");
+                        toml::from_str(&contents).expect("couldn't parse toml file");
                     nem_file.file_name = String::from(path_buf.to_str().unwrap());
                     nem_file.sort();
                     nem_files.nem_files.push(nem_file);
@@ -222,9 +222,9 @@ fn main() {
                 .arg("-c")
                 .arg(format!("which {}", cmd[0]))
                 .output()
-                .expect("Failed to look up command.");
+                .expect("failed to look up command");
             let location = str::from_utf8(&exec.stdout)
-                .expect("Couldn't convert to string.")
+                .expect("couldn't convert to string")
                 .trim();
 
             let _ = process::Command::new(&location)
